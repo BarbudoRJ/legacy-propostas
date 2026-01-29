@@ -96,4 +96,133 @@ def criar_proposta(dados):
     y += 52
 
     # Divisor
-    draw.line([(MARGEM_X, y), (W - MARGEM
+    draw.line([(MARGEM_X, y), (W - MARGEM_X, y)], fill=(210, 210, 210, 255), width=2)
+    y += 32
+
+    # Modelo (centralizado)
+    draw.text((CENTRO_X, y), dados["modelo"], font=f_subtitulo, fill=PRETO, anchor="ma")
+    y += 44
+
+    # Ano + FIPE (centralizado)
+    info_fipe = f"Ano: {dados['ano']}  |  FIPE: {dados['fipe']}"
+    draw.text((CENTRO_X, y), info_fipe, font=f_titulo, fill=AZUL_LEGACY, anchor="ma")
+    y += 70
+
+    # Adesão (badge) — ainda no topo (antes dos veículos)
+    badge_w, badge_h = 460, 60
+    bx0 = CENTRO_X - badge_w // 2
+    by0 = y
+    # Radius funciona no Pillow moderno
+    draw.rounded_rectangle([bx0, by0, bx0 + badge_w, by0 + badge_h], radius=14, fill=(245, 245, 245, 255))
+    draw.text((CENTRO_X, by0 + 18), f"Adesão: R$ {dados['adesao']}", font=f_subtitulo, fill=PRETO, anchor="ma")
+
+    # GARANTIA: não desenhar mais nada na área dos veículos
+    # (pulamos direto para a BASE)
+    y = BASE_Y0
+
+    # --- 2) PAINEL BASE (TABELA + BENEFÍCIOS) ---
+    draw.rounded_rectangle([PAINEL_X0, PAINEL_Y0, PAINEL_X1, PAINEL_Y1], radius=24, fill=(255, 255, 255, 235))
+
+    largura_util = (PAINEL_X1 - PAINEL_X0) - 40
+    start_x = PAINEL_X0 + 20
+    largura_col = largura_util // 4
+
+    # Títulos das colunas
+    colunas = ["Econ.", "Básico", "Plus", "Prem."]
+    y_head = BASE_Y0 + 10
+    for i, col in enumerate(colunas):
+        cx = start_x + (i * largura_col) + (largura_col // 2)
+        draw.text((cx, y_head), col, font=f_tabela_head, fill=LARANJA, anchor="ma")
+
+    # Linha separadora
+    y_line = y_head + 32
+    draw.line([(start_x, y_line), (start_x + largura_util, y_line)], fill=PRETO, width=3)
+
+    # Valores (1 linha “R$” + número)
+    y_val = y_line + 16
+    for i, p in enumerate(dados["precos"]):
+        cx = start_x + (i * largura_col) + (largura_col // 2)
+        valor_limpo = p.replace("R$ ", "")
+        draw.text((cx, y_val), "R$", font=f_small, fill=PRETO, anchor="ma")
+        draw.text((cx, y_val + 26), valor_limpo, font=f_tabela_val, fill=PRETO, anchor="ma")
+
+    # --- 3) BENEFÍCIOS (grid enxuto) ---
+    itens = [
+        ("Rastreamento", ["✔", "✔", "✔", "✔"]),
+        ("Reboque",      ["200", "400", "1mil", "1mil"]),
+        ("Roubo/Furto",  ["✖", "✔", "✔", "✔"]),
+        ("Colisão/PT",   ["✖", "✖", "✔", "✔"]),
+        ("Terceiros",    ["✖", "✖", "✔", "✔"]),
+        ("Vidros",       ["✖", "✖", "✔", "✔"]),
+        ("Carro Res.",   ["✖", "✖", "10d", "30d"]),
+        ("Gás (GNV)",    ["✖", "✖", "✖", "✔"]),
+    ]
+
+    # Função interna para ícones
+    def desenhar_icone_local(draw_obj, x, y, status):
+        if status == "✔":
+            draw_obj.text((x, y), "✔", font=f_check, fill=VERDE, anchor="mm")
+        elif status == "✖":
+            draw_obj.text((x, y), "✖", font=f_check, fill=VERMELHO, anchor="mm")
+        else:
+            draw_obj.text((x, y), status, font=f_check, fill=PRETO, anchor="mm")
+
+    # Começa abaixo dos preços
+    y_b = y_val + 86
+    row_h = 32
+
+    # Linha guia sutil
+    draw.line([(start_x, y_b - 14), (start_x + largura_util, y_b - 14)], fill=(220, 220, 220, 255), width=2)
+
+    for nome, status_lista in itens:
+        draw.text((start_x, y_b), nome, font=f_texto, fill=CINZA_TEXTO, anchor="la")
+        for i, status in enumerate(status_lista):
+            cx = start_x + (i * largura_col) + (largura_col // 2)
+            desenhar_icone_local(draw, cx, y_b + 14, status)
+        y_b += row_h
+
+    # --- 4) RODAPÉ (dentro do painel) ---
+    aviso_promo = "⚠ PAGAMENTO ANTECIPADO GERA DESCONTO ⚠"
+    draw.text((CENTRO_X, RODAPE_Y), aviso_promo, font=f_negrito, fill=LARANJA, anchor="mm")
+
+    aviso_legal = "A COTAÇÃO PODE SOFRER ALTERAÇÕES BASEADAS NOS VALORES VIGENTES"
+    draw.text((CENTRO_X, RODAPE_Y + 34), aviso_legal, font=f_aviso, fill=AZUL_LEGACY, anchor="mm")
+
+    return img.convert("RGB")
+
+# --- APP STREAMLIT ---
+st.title("🛡️ Gerador Legacy Pro")
+
+c1, c2 = st.columns(2)
+cliente = c1.text_input("Nome do Cliente")
+consultor = c2.text_input("Nome do Consultor")
+modelo = st.text_input("Modelo do Veículo")
+
+c3, c4, c5 = st.columns(3)
+ano = c3.text_input("Ano")
+fipe = c4.number_input("Valor FIPE", step=100.0)
+regiao = c5.selectbox("Região", ["Capital", "Serrana"])
+adesao = st.text_input("Valor da Adesão (R$)", value="300,00")
+
+if st.button("GERAR COTAÇÃO", type="primary"):
+    if fipe > 0 and cliente:
+        with st.spinner("Gerando arte..."):
+            precos = calcular_mensalidades(fipe, regiao)
+            if precos:
+                dados = {
+                    "cliente": cliente, 
+                    "consultor": consultor, 
+                    "modelo": modelo, 
+                    "ano": ano, 
+                    "fipe": f"R$ {fipe:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), 
+                    "precos": precos, 
+                    "adesao": adesao
+                }
+                img = criar_proposta(dados)
+                st.image(img, caption="Layout Final", width=400)
+                
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                st.download_button("📥 BAIXAR IMAGEM", buf.getvalue(), f"Cotacao_{cliente}.png", "image/png")
+    else:
+        st.warning("Preencha FIPE e Nome do Cliente.")
