@@ -3,10 +3,10 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 from datetime import datetime
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Gerador Proposta Legacy", page_icon="🧡", layout="centered")
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="Gerador Legacy Mobile", page_icon="📱", layout="centered")
 
-# --- 2. DADOS E REGRAS DE NEGÓCIO ---
+# --- REGRAS DE NEGÓCIO ---
 def calcular_mensalidades(fipe, regiao):
     # Tabela de Preços (Capital vs Serrana)
     tabela = {
@@ -21,189 +21,198 @@ def calcular_mensalidades(fipe, regiao):
         90000: ([75.00, 330.49, 422.79, 475.70], [75.00, 329.90, 348.00, 410.00]),
         100000:([75.00, 370.59, 487.59, 535.69], [75.00, 389.60, 465.00, 520.00]),
     }
-
-    idx_regiao = 0 if regiao == "Capital" else 1
     
+    idx_regiao = 0 if regiao == "Capital" else 1
     valores = None
     for teto, precos in tabela.items():
         if fipe <= teto:
             valores = precos[idx_regiao]
             break
             
-    if not valores:
-        return None 
-    
+    if not valores: return None
     return [f"R$ {v:.2f}".replace('.', ',') for v in valores]
 
-# --- 3. FUNÇÃO DE DESENHO NA IMAGEM ---
-def gerar_imagem(dados, template_path="TAMPLATE PROPOSTA.jpg"): 
-    img = Image.open(template_path)
+# --- GERADOR DE IMAGEM 9:16 (DESENHO DO ZERO) ---
+def criar_proposta_automatica(dados):
+    # 1. Criar Canvas em Branco (1080x1920 - Full HD Vertical)
+    W, H = 1080, 1920
+    img = Image.new('RGB', (W, H), color=(255, 255, 255))
     draw = ImageDraw.Draw(img)
     
-    # --- CORREÇÃO DAS FONTES (USANDO FONTE DO SISTEMA LINUX) ---
+    # --- CORES ---
+    LARANJA_LEGACY = (243, 112, 33) # Cor aproximada
+    CINZA_ESCURO = (50, 50, 50)
+    CINZA_CLARO = (240, 240, 240)
+    BRANCO = (255, 255, 255)
+    VERDE = (0, 180, 0)
+    VERMELHO = (200, 0, 0)
+
+    # --- FONTES ---
     try:
-        # Tenta pegar a fonte DejaVuSans que existe no servidor
-        path_font = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        path_font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        
-        font_padrao = ImageFont.truetype(path_font, 28) 
-        font_bold = ImageFont.truetype(path_font_bold, 28)
-        font_grid = ImageFont.truetype(path_font_bold, 24) 
-        font_check = ImageFont.truetype(path_font, 40)
-        font_small_bold = ImageFont.truetype(path_font_bold, 20)
+        # Caminhos Linux (Streamlit Cloud)
+        base_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans"
+        font_h1 = ImageFont.truetype(f"{base_path}-Bold.ttf", 80) # Títulos Grandes
+        font_h2 = ImageFont.truetype(f"{base_path}-Bold.ttf", 50) # Subtítulos
+        font_body = ImageFont.truetype(f"{base_path}.ttf", 40)    # Texto normal
+        font_bold = ImageFont.truetype(f"{base_path}-Bold.ttf", 40) # Texto negrito
+        font_small = ImageFont.truetype(f"{base_path}.ttf", 30)   # Texto pequeno
+        font_check = ImageFont.truetype(f"{base_path}.ttf", 50)   # Checks
     except:
-        # Se der erro, tenta carregar Arial local ou fallback
-        try:
-            font_padrao = ImageFont.truetype("arial.ttf", 28)
-            font_bold = ImageFont.truetype("arialbd.ttf", 28)
-            font_grid = ImageFont.truetype("arialbd.ttf", 24)
-            font_check = ImageFont.truetype("arial.ttf", 40)
-            font_small_bold = ImageFont.truetype("arialbd.ttf", 20)
-        except:
-            font_padrao = ImageFont.load_default()
-            font_bold = ImageFont.load_default()
-            font_grid = ImageFont.load_default()
-            font_check = ImageFont.load_default()
-            font_small_bold = ImageFont.load_default()
+        # Fallback simples
+        font_h1 = font_h2 = font_body = font_bold = font_small = font_check = ImageFont.load_default()
 
-    cor_texto = (0, 0, 0)
-    cor_verde = (0, 150, 0)
-    cor_vermelho = (200, 0, 0) 
-    cor_branco = (255, 255, 255)
-
-    # Preenchimento Cabeçalho
-    draw.text((180, 185), dados['cliente'], font=font_padrao, fill=cor_texto)
-    draw.text((180, 215), datetime.now().strftime("%d/%m/%Y"), font=font_padrao, fill=cor_texto)
-    draw.text((220, 245), dados['consultor'], font=font_padrao, fill=cor_texto)
-
-    # Bloco Laranja Esquerdo
-    draw.text((50, 310), dados['modelo'], font=font_bold, fill=cor_texto)
-    draw.text((50, 370), dados['ano'], font=font_bold, fill=cor_texto)
-    draw.text((50, 430), dados['fipe_texto'], font=font_bold, fill=cor_texto)
+    # --- 1. CABEÇALHO ---
+    # Barra Laranja no topo
+    draw.rectangle([(0, 0), (W, 250)], fill=LARANJA_LEGACY)
     
-    # Bloco Laranja Direito
-    draw.text((700, 290), dados['adesao_final'], font=font_bold, fill=cor_texto) 
-    draw.text((700, 330), dados['mensalidade_final'], font=font_bold, fill=cor_texto)
+    # Tentar colocar o Logo
+    try:
+        logo = Image.open("logo.png") # O NOME DO ARQUIVO DEVE SER ESSE
+        # Redimensionar logo mantendo proporção (altura max 200)
+        ratio = 200 / logo.height
+        new_size = (int(logo.width * ratio), 200)
+        logo = logo.resize(new_size)
+        # Centralizar logo
+        logo_x = (W - new_size[0]) // 2
+        img.paste(logo, (logo_x, 25), logo if logo.mode == 'RGBA' else None)
+    except:
+        draw.text((W//2 - 100, 80), "LOGO LEGACY", font=font_h1, fill=BRANCO)
 
-    # Checkboxes
-    if dados['uso'] == "Aplicativo":
-        draw.text((860, 375), "X", font=font_check, fill=cor_texto)
-    else:
-        draw.text((860, 435), "X", font=font_check, fill=cor_texto)
+    # --- 2. DADOS DO CLIENTE E CARRO ---
+    cursor_y = 280
+    
+    # Texto de Saudação
+    texto_cliente = f"Proposta para: {dados['cliente']}"
+    w_text = draw.textlength(texto_cliente, font=font_h2)
+    draw.text(((W - w_text)/2, cursor_y), texto_cliente, font=font_h2, fill=CINZA_ESCURO)
+    
+    cursor_y += 80
+    
+    # Caixa cinza com dados do carro
+    draw.rectangle([(50, cursor_y), (W-50, cursor_y + 250)], fill=CINZA_CLARO, outline=None)
+    
+    # Detalhes do Carro (Centralizado na caixa cinza)
+    info_carro = f"{dados['modelo']}\n{dados['ano']}"
+    draw.multiline_text((W//2, cursor_y + 30), info_carro, font=font_h2, fill=LARANJA_LEGACY, anchor="ma", align="center")
+    
+    # Valor FIPE grande
+    draw.text((W//2, cursor_y + 160), f"FIPE: {dados['fipe_texto']}", font=font_h1, fill=CINZA_ESCURO, anchor="ma")
 
-    # Grid
-    col_x = [380, 520, 660, 800] 
-    y_start = 535 
-    y_step = 42 
+    cursor_y += 300
 
-    mensalidades = dados['lista_precos']
+    # --- 3. TABELA DE PLANOS ---
+    # Cabeçalho da Tabela
+    colunas = ["Econômico", "Básico", "Plus", "Premium"]
+    largura_col = W // 4
+    
+    for i, col in enumerate(colunas):
+        x_pos = i * largura_col + (largura_col // 2)
+        draw.text((x_pos, cursor_y), col, font=font_bold, fill=LARANJA_LEGACY, anchor="ma")
+    
+    cursor_y += 60
+    draw.line([(50, cursor_y), (W-50, cursor_y)], fill=CINZA_ESCURO, width=2) # Linha separadora
+    cursor_y += 20
 
-    if mensalidades:
-        for i, valor in enumerate(mensalidades):
-            draw.text((col_x[i], y_start), valor, font=font_grid, fill=cor_branco)
+    # Linha: MENSALIDADE (Destaque)
+    precos = dados['lista_precos']
+    for i, preco in enumerate(precos):
+        x_pos = i * largura_col + (largura_col // 2)
+        # Limpar "R$ " para caber melhor se precisar
+        valor_limpo = preco.replace("R$ ", "")
+        draw.text((x_pos, cursor_y), f"R$\n{valor_limpo}", font=font_h2, fill=CINZA_ESCURO, anchor="ma", align="center")
+    
+    cursor_y += 140
 
-    grid_config = [
-        ["V", "V", "V", "V"], # Rastreador
-        ["200 km", "400 km", "1000 km", "1000 km"], # Reboque
-        ["X", "V", "V", "V"], # Roubo
-        ["X", "X", "V", "V"], # Incêndio
-        ["X", "X", "V", "V"], # Colisão
-        ["X", "X", "V", "V"], # Fenômenos
-        ["X", "X", "10 dias", "30 dias"], # Carro Reserva
-        ["X", "X", "V", "V"], # Vidros
-        ["X", "X", "V", "V"], # Terceiros
-        ["X", "X", "X", "V"]  # GNV
+    # --- GRID DE BENEFÍCIOS ---
+    # Configuração: (Nome do Benefício, [Eco, Bas, Plus, Prem])
+    beneficios = [
+        ("Rastreamento", ["✔", "✔", "✔", "✔"]),
+        ("Reboque", ["200km", "400km", "1000km", "1000km"]),
+        ("Roubo/Furto", ["✖", "✔", "✔", "✔"]),
+        ("Colisão/PT", ["✖", "✖", "✔", "✔"]),
+        ("Terceiros", ["✖", "✖", "✔", "✔"]),
+        ("Vidros", ["✖", "✖", "✔", "✔"]),
+        ("Carro Reserva", ["✖", "✖", "10d", "30d"]),
+        ("Cob. GNV", ["✖", "✖", "✖", "✔"]),
     ]
 
-    current_y = y_start + y_step 
-    
-    for row in grid_config:
-        for i, content in enumerate(row):
-            pos_x = col_x[i] + 15
-            
-            if content == "V":
-                draw.text((pos_x, current_y), "✔", font=font_check, fill=cor_verde)
-            elif content == "X":
-                draw.text((pos_x + 5, current_y), "✖", font=font_check, fill=cor_vermelho)
-            else:
-                draw.text((pos_x - 10, current_y + 5), content, font=font_small_bold, fill=(100,100,100))
+    for nome, status_lista in beneficios:
+        # Desenhar fundo alternado para facilitar leitura
+        # draw.rectangle([(0, cursor_y-10), (W, cursor_y+50)], fill=CINZA_CLARO)
         
-        current_y += y_step
+        # Nome do benefício (pequeno no centro ou lateral?) 
+        # Vamos colocar os ícones alinhados nas colunas
+        
+        for i, status in enumerate(status_lista):
+            x_pos = i * largura_col + (largura_col // 2)
+            
+            cor = CINZA_ESCURO
+            fonte_uso = font_bold
+            
+            if status == "✔": 
+                cor = VERDE
+                fonte_uso = font_check
+            elif status == "✖": 
+                cor = VERMELHO
+                fonte_uso = font_check
+            
+            draw.text((x_pos, cursor_y), status, font=fonte_uso, fill=cor, anchor="ma")
+        
+        # Nome do benefício (centralizado em cima dos ícones ou na lateral esquerda bem pequeno)
+        draw.text((50, cursor_y + 10), nome, font=font_small, fill=CINZA_ESCURO, anchor="lm")
+        
+        cursor_y += 80 # Próxima linha
+
+    # --- 4. RODAPÉ (AVISO) ---
+    y_aviso = H - 250
+    draw.rectangle([(0, y_aviso), (W, H)], fill=LARANJA_LEGACY)
+    
+    aviso_texto = "⚠ PAGAMENTO ANTECIPADO ⚠\nGARANTE DESCONTO NA MENSALIDADE!\n\nConsulte condições com seu consultor."
+    draw.multiline_text((W//2, y_aviso + 125), aviso_texto, font=font_bold, fill=BRANCO, anchor="mm", align="center")
 
     return img
 
-# --- 4. INTERFACE ---
-st.title("🧡 Gerador de Proposta Legacy")
-st.markdown("Preencha os dados abaixo para gerar a imagem oficial.")
+# --- INTERFACE ---
+st.title("📱 Gerador Automático (Story)")
 
+# Formulário Simplificado
 col1, col2 = st.columns(2)
-with col1:
-    consultor = st.text_input("Consultor(a)")
-    cliente = st.text_input("Nome do Cliente")
-with col2:
-    regiao = st.selectbox("Região de Circulação", ["Capital", "Região Serrana"])
-    uso = st.radio("Uso do Veículo", ["Particular", "Aplicativo"])
+nome_consultor = col1.text_input("Nome do Consultor")
+nome_cliente = col2.text_input("Nome do Cliente")
 
-st.divider()
+modelo = st.text_input("Modelo do Veículo")
+c1, c2 = st.columns(2)
+ano = c1.text_input("Ano")
+valor_fipe = c2.number_input("Valor FIPE", step=100.0)
+regiao = st.selectbox("Região", ["Capital", "Região Serrana"])
 
-c1, c2, c3 = st.columns(3)
-with c1:
-    modelo = st.text_input("Modelo do Carro")
-with c2:
-    ano = st.text_input("Ano/Modelo")
-with c3:
-    valor_fipe = st.number_input("Valor FIPE (R$)", min_value=0.0, step=100.0)
-
-st.divider()
-st.subheader("Valores da Proposta")
-col_adesao, col_plano = st.columns(2)
-
-with col_adesao:
-    adesao_input = st.text_input("Valor da Adesão (R$)", value="300,00")
-
-with col_plano:
-    plano_sugerido = st.selectbox("Qual plano destacar no topo?", ["Econômico", "Básico", "Plus", "Premium"])
-
-if st.button("GERAR IMAGEM AGORA", type="primary"):
-    if valor_fipe > 100000:
-        st.error("⚠️ Veículo acima de R$ 100.000,00 não permitido pelo regulamento.")
-    elif valor_fipe == 0:
-        st.warning("Preencha o valor da FIPE.")
+if st.button("GERAR PROPOSTA 9:16", type="primary"):
+    if not valor_fipe:
+        st.warning("Digite o valor da FIPE")
     else:
-        lista_precos = calcular_mensalidades(valor_fipe, regiao)
-        
-        if lista_precos:
-            mapa_planos = {"Econômico": 0, "Básico": 1, "Plus": 2, "Premium": 3}
-            mensalidade_destaque = lista_precos[mapa_planos[plano_sugerido]]
-
+        precos = calcular_mensalidades(valor_fipe, regiao)
+        if precos:
             dados = {
-                "cliente": cliente,
-                "consultor": consultor,
+                "cliente": nome_cliente,
                 "modelo": modelo,
                 "ano": ano,
                 "fipe_texto": f"R$ {valor_fipe:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
-                "uso": uso,
-                "adesao_final": adesao_input,
-                "mensalidade_final": mensalidade_destaque,
-                "lista_precos": lista_precos
+                "lista_precos": precos
             }
-
-            with st.spinner("Desenhando proposta..."):
-                try:
-                    imagem_final = gerar_imagem(dados)
-                    st.image(imagem_final, caption="Proposta Gerada", use_column_width=True)
-                    
-                    buf = io.BytesIO()
-                    imagem_final.save(buf, format="PNG")
-                    byte_im = buf.getvalue()
-
-                    st.download_button(
-                        label="📥 BAIXAR IMAGEM PARA WHATSAPP",
-                        data=byte_im,
-                        file_name=f"Proposta_{cliente}.png",
-                        mime="image/png"
-                    )
-                except Exception as e:
-                    st.error(f"Erro ao desenhar imagem: {e}")
+            
+            img_final = criar_proposta_automatica(dados)
+            
+            # Mostrar e Baixar
+            st.image(img_final, caption="Visualização", width=300) # Mostra menor pra caber na tela
+            
+            buf = io.BytesIO()
+            img_final.save(buf, format="PNG")
+            
+            st.download_button(
+                "📥 BAIXAR IMAGEM (HD)",
+                data=buf.getvalue(),
+                file_name=f"proposta_{nome_cliente}.png",
+                mime="image/png"
+            )
         else:
-            st.error("Erro ao calcular valores.")
+            st.error("Valor FIPE fora da tabela.")
