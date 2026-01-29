@@ -1,45 +1,117 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 import io
-import os
-import urllib.request # Usando biblioteca padrão para não dar erro
 
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Gerador Legacy Story", page_icon="📱", layout="centered")
 
-# --- AUTO-DOWNLOAD DE FONTES (SEM DEPENDÊNCIAS EXTRAS) ---
-def carregar_fontes():
-    # Links diretos para fontes
-    fontes = {
-        "Roboto-Bold.ttf": "https://github.com/google/fonts/raw/main/ofl/roboto/Roboto-Bold.ttf",
-        "Roboto-Regular.ttf": "https://github.com/google/fonts/raw/main/ofl/roboto/Roboto-Regular.ttf"
-    }
+# --- DESENHO DA IMAGEM ---
+def criar_proposta(dados):
+    W, H = 1080, 1920
+    img = Image.new('RGB', (W, H), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
     
-    path_bold = "Roboto-Bold.ttf"
-    path_reg = "Roboto-Regular.ttf"
+    # Cores
+    LARANJA = (243, 112, 33) 
+    CINZA = (50, 50, 50)
+    CLARO = (240, 240, 240)
+    BRANCO = (255, 255, 255)
+    VERDE = (0, 180, 0)
+    VERMELHO = (200, 0, 0)
 
-    # Baixa se não existir
-    for nome, url in fontes.items():
-        if not os.path.exists(nome):
-            try:
-                urllib.request.urlretrieve(url, nome)
-            except:
-                pass # Se falhar, usa padrão
-
+    # --- CARREGAR FONTES (AGORA BUSCA OS ARQUIVOS QUE VOCÊ SUBIU) ---
     try:
-        return {
-            "h1": ImageFont.truetype(path_bold, 70),
-            "h2": ImageFont.truetype(path_bold, 45),
-            "body": ImageFont.truetype(path_reg, 35),
-            "bold": ImageFont.truetype(path_bold, 35),
-            "check": ImageFont.truetype(path_reg, 55)
-        }
-    except:
-        # Fallback (Fonte de emergência se o download falhar)
-        p = ImageFont.load_default()
-        return {"h1": p, "h2": p, "body": p, "bold": p, "check": p}
+        # Tenta carregar bold.ttf e regular.ttf
+        font_h1 = ImageFont.truetype("bold.ttf", 70)
+        font_h2 = ImageFont.truetype("bold.ttf", 45)
+        font_body = ImageFont.truetype("regular.ttf", 35)
+        font_bold = ImageFont.truetype("bold.ttf", 35)
+        font_check = ImageFont.truetype("regular.ttf", 55)
+    except OSError:
+        # Se não achar, avisa na tela do app para você saber
+        st.error("ERRO: O sistema não achou os arquivos 'bold.ttf' e 'regular.ttf' no GitHub.")
+        # Usa fonte feia de emergência
+        font_h1 = font_h2 = font_body = font_bold = font_check = ImageFont.load_default()
 
-FONTES = carregar_fontes()
+    # 1. TOPO (LOGO)
+    draw.rectangle([(0, 0), (W, 250)], fill=LARANJA)
+    try:
+        logo = Image.open("logo.png").convert("RGBA")
+        ratio = 200 / logo.height
+        logo = logo.resize((int(logo.width * ratio), 200))
+        img.paste(logo, ((W - logo.width)//2, 25), logo)
+    except:
+        draw.text((W//2, 100), "LOGO LEGACY", font=font_h1, fill=BRANCO, anchor="mm")
+
+    # 2. INFORMAÇÕES
+    y = 280
+    
+    # Cliente e Consultor
+    draw.text((50, y), f"Cliente: {dados['cliente']}", font=font_h2, fill=CINZA)
+    y += 60
+    draw.text((50, y), f"Consultor: {dados['consultor']}", font=font_bold, fill=LARANJA)
+    
+    y += 70
+    draw.rectangle([(40, y), (W-40, y+220)], fill=CLARO)
+    
+    # Bloco Carro
+    draw.text((W//2, y+40), f"{dados['modelo']} ({dados['ano']})", font=font_h2, fill=CINZA, anchor="ma", align="center")
+    draw.text((W//2, y+130), f"FIPE: {dados['fipe']}", font=font_h1, fill=LARANJA, anchor="ma")
+
+    # 3. TABELA DE PREÇOS
+    y += 260
+    
+    # Destaque Adesão
+    draw.text((W//2, y), f"Taxa de Adesão: R$ {dados['adesao']}", font=font_h2, fill=CINZA, anchor="ma")
+    
+    y += 70
+    margem_nomes = 300
+    largura_col = (W - margem_nomes) // 4
+    colunas = ["Econ.", "Básico", "Plus", "Prem."]
+    
+    # Cabeçalho
+    for i, col in enumerate(colunas):
+        x = margem_nomes + (i * largura_col) + (largura_col // 2)
+        draw.text((x, y), col, font=font_bold, fill=LARANJA, anchor="ma")
+    
+    y += 50
+    draw.line([(40, y), (W-40, y)], fill=CINZA, width=3)
+    
+    # Mensalidades
+    y += 30
+    for i, preco in enumerate(dados['precos']):
+        x = margem_nomes + (i * largura_col) + (largura_col // 2)
+        val = preco.replace("R$ ", "")
+        draw.text((x, y), f"R$\n{val}", font=font_h2, fill=CINZA, anchor="ma", align="center")
+
+    # 4. BENEFÍCIOS
+    y += 180
+    itens = [
+        ("Rastreamento", ["✔", "✔", "✔", "✔"]),
+        ("Reboque", ["200", "400", "1mil", "1mil"]),
+        ("Roubo/Furto", ["✖", "✔", "✔", "✔"]),
+        ("Colisão/PT", ["✖", "✖", "✔", "✔"]),
+        ("Terceiros", ["✖", "✖", "✔", "✔"]),
+        ("Vidros", ["✖", "✖", "✔", "✔"]),
+        ("Carro Res.", ["✖", "✖", "10d", "30d"]),
+        ("Gás (GNV)", ["✖", "✖", "✖", "✔"]),
+    ]
+
+    for nome, status_lista in itens:
+        draw.text((50, y+10), nome, font=font_body, fill=CINZA)
+        for i, status in enumerate(status_lista):
+            x = margem_nomes + (i * largura_col) + (largura_col // 2)
+            cor = VERDE if status == "✔" else VERMELHO if status == "✖" else CINZA
+            font = font_check if status in ["✔", "✖"] else font_bold
+            draw.text((x, y), status, font=font, fill=cor, anchor="ma")
+        y += 85
+
+    # 5. RODAPÉ
+    draw.rectangle([(0, H-250), (W, H)], fill=LARANJA)
+    aviso = "⚠ PAGAMENTO ANTECIPADO ⚠\nGARANTE DESCONTO NA MENSALIDADE!"
+    draw.multiline_text((W//2, H-125), aviso, font=font_h2, fill=BRANCO, anchor="mm", align="center")
+
+    return img
 
 # --- CÁLCULO MENSALIDADE ---
 def calcular_mensalidades(fipe, regiao):
@@ -59,100 +131,6 @@ def calcular_mensalidades(fipe, regiao):
     for teto, precos in tabela.items():
         if fipe <= teto: return [f"R$ {v:.2f}".replace('.', ',') for v in precos[idx]]
     return None
-
-# --- DESENHO DA IMAGEM ---
-def criar_proposta(dados):
-    W, H = 1080, 1920
-    img = Image.new('RGB', (W, H), color=(255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    
-    # Cores
-    LARANJA = (243, 112, 33) 
-    CINZA = (50, 50, 50)
-    CLARO = (240, 240, 240)
-    BRANCO = (255, 255, 255)
-    VERDE = (0, 180, 0)
-    VERMELHO = (200, 0, 0)
-
-    # 1. TOPO (LOGO)
-    draw.rectangle([(0, 0), (W, 250)], fill=LARANJA)
-    try:
-        logo = Image.open("logo.png").convert("RGBA")
-        ratio = 200 / logo.height
-        logo = logo.resize((int(logo.width * ratio), 200))
-        img.paste(logo, ((W - logo.width)//2, 25), logo)
-    except:
-        draw.text((W//2, 100), "LOGO LEGACY", font=FONTES['h1'], fill=BRANCO, anchor="mm")
-
-    # 2. INFORMAÇÕES (CONSULTOR, CLIENTE, ADESÃO)
-    y = 280
-    
-    # Linha 1: Cliente e Consultor
-    draw.text((50, y), f"Cliente: {dados['cliente']}", font=FONTES['h2'], fill=CINZA)
-    y += 60
-    draw.text((50, y), f"Consultor: {dados['consultor']}", font=FONTES['bold'], fill=LARANJA)
-    
-    y += 70
-    draw.rectangle([(40, y), (W-40, y+220)], fill=CLARO)
-    
-    # Bloco Carro
-    draw.text((W//2, y+40), f"{dados['modelo']} ({dados['ano']})", font=FONTES['h2'], fill=CINZA, anchor="ma", align="center")
-    draw.text((W//2, y+130), f"FIPE: {dados['fipe']}", font=FONTES['h1'], fill=LARANJA, anchor="ma")
-
-    # 3. TABELA DE PREÇOS
-    y += 260
-    
-    # Destaque Adesão
-    draw.text((W//2, y), f"Taxa de Adesão: R$ {dados['adesao']}", font=FONTES['h2'], fill=CINZA, anchor="ma")
-    
-    y += 70
-    margem_nomes = 300
-    largura_col = (W - margem_nomes) // 4
-    colunas = ["Econ.", "Básico", "Plus", "Prem."]
-    
-    # Cabeçalho
-    for i, col in enumerate(colunas):
-        x = margem_nomes + (i * largura_col) + (largura_col // 2)
-        draw.text((x, y), col, font=FONTES['bold'], fill=LARANJA, anchor="ma")
-    
-    y += 50
-    draw.line([(40, y), (W-40, y)], fill=CINZA, width=3)
-    
-    # Mensalidades
-    y += 30
-    for i, preco in enumerate(dados['precos']):
-        x = margem_nomes + (i * largura_col) + (largura_col // 2)
-        val = preco.replace("R$ ", "")
-        draw.text((x, y), f"R$\n{val}", font=FONTES['h2'], fill=CINZA, anchor="ma", align="center")
-
-    # 4. BENEFÍCIOS
-    y += 180
-    itens = [
-        ("Rastreamento", ["✔", "✔", "✔", "✔"]),
-        ("Reboque", ["200", "400", "1mil", "1mil"]),
-        ("Roubo/Furto", ["✖", "✔", "✔", "✔"]),
-        ("Colisão/PT", ["✖", "✖", "✔", "✔"]),
-        ("Terceiros", ["✖", "✖", "✔", "✔"]),
-        ("Vidros", ["✖", "✖", "✔", "✔"]),
-        ("Carro Res.", ["✖", "✖", "10d", "30d"]),
-        ("Gás (GNV)", ["✖", "✖", "✖", "✔"]),
-    ]
-
-    for nome, status_lista in itens:
-        draw.text((50, y+10), nome, font=FONTES['body'], fill=CINZA)
-        for i, status in enumerate(status_lista):
-            x = margem_nomes + (i * largura_col) + (largura_col // 2)
-            cor = VERDE if status == "✔" else VERMELHO if status == "✖" else CINZA
-            font = FONTES['check'] if status in ["✔", "✖"] else FONTES['bold']
-            draw.text((x, y), status, font=font, fill=cor, anchor="ma")
-        y += 85
-
-    # 5. RODAPÉ
-    draw.rectangle([(0, H-250), (W, H)], fill=LARANJA)
-    aviso = "⚠ PAGAMENTO ANTECIPADO ⚠\nGARANTE DESCONTO NA MENSALIDADE!"
-    draw.multiline_text((W//2, H-125), aviso, font=FONTES['h2'], fill=BRANCO, anchor="mm", align="center")
-
-    return img
 
 # --- INTERFACE ---
 st.title("📱 Gerador Legacy Oficial")
