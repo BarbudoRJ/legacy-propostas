@@ -5,35 +5,59 @@ import io
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Gerador Legacy Story", page_icon="📱", layout="centered")
 
+# --- FUNÇÃO PARA ÍCONES BONITOS (Bolinhas) ---
+def desenhar_icone(draw_obj, x, y, status, font_icon, verde, vermelho, branco, cinza, font_bold):
+    if status == "✔":
+        raio = 30
+        draw_obj.ellipse([(x-raio, y-raio), (x+raio, y+raio)], fill=verde)
+        draw_obj.text((x, y), "✔", font=font_icon, fill=branco, anchor="mm")
+    elif status == "✖":
+        raio = 30
+        draw_obj.ellipse([(x-raio, y-raio), (x+raio, y+raio)], fill=vermelho)
+        draw_obj.text((x, y), "✖", font=font_icon, fill=branco, anchor="mm")
+    else:
+        # Texto normal (ex: "200", "10d")
+        draw_obj.text((x, y), status, font=font_bold, fill=cinza, anchor="ma")
+
 # --- DESENHO DA IMAGEM ---
 def criar_proposta(dados):
     W, H = 1080, 1920
-    img = Image.new('RGB', (W, H), color=(255, 255, 255))
-    draw = ImageDraw.Draw(img)
     
-    # Cores
-    LARANJA = (243, 112, 33) 
-    CINZA = (50, 50, 50)
-    CLARO = (240, 240, 240)
-    BRANCO = (255, 255, 255)
-    VERDE = (0, 180, 0)
-    VERMELHO = (200, 0, 0)
-
-    # --- CARREGAR FONTES (AGORA BUSCA OS ARQUIVOS QUE VOCÊ SUBIU) ---
+    # 1. SETUP DO FUNDO
     try:
-        # Tenta carregar bold.ttf e regular.ttf
-        font_h1 = ImageFont.truetype("bold.ttf", 70)
-        font_h2 = ImageFont.truetype("bold.ttf", 45)
-        font_body = ImageFont.truetype("regular.ttf", 35)
-        font_bold = ImageFont.truetype("bold.ttf", 35)
-        font_check = ImageFont.truetype("regular.ttf", 55)
-    except OSError:
-        # Se não achar, avisa na tela do app para você saber
-        st.error("ERRO: O sistema não achou os arquivos 'bold.ttf' e 'regular.ttf' no GitHub.")
-        # Usa fonte feia de emergência
-        font_h1 = font_h2 = font_body = font_bold = font_check = ImageFont.load_default()
+        # Tenta carregar fundo.jpg e redimensionar
+        bg = Image.open("fundo.jpg").convert("RGBA")
+        img = bg.resize((W, H), Image.LANCZOS)
+    except:
+        # Fundo branco de emergência
+        img = Image.new('RGBA', (W, H), color=(255, 255, 255, 255))
 
-    # 1. TOPO (LOGO)
+    # Camada para transparências
+    overlay = Image.new('RGBA', img.size, (0,0,0,0))
+    draw_overlay = ImageDraw.Draw(overlay)
+    draw = ImageDraw.Draw(img) # Draw principal
+
+    # CORES
+    LARANJA = (243, 112, 33, 255)
+    CINZA = (50, 50, 50, 255)
+    BRANCO = (255, 255, 255, 255)
+    VERDE_VIVO = (0, 200, 0, 255)
+    VERMELHO_VIVO = (220, 0, 0, 255)
+    BRANCO_TRANSP = (255, 255, 255, 230) # Caixa quase sólida
+
+    # FONTES LOCAIS
+    try:
+        f_h1 = ImageFont.truetype("bold.ttf", 70)
+        f_h2 = ImageFont.truetype("bold.ttf", 45)
+        f_body = ImageFont.truetype("regular.ttf", 35)
+        f_bold = ImageFont.truetype("bold.ttf", 35)
+        f_check = ImageFont.truetype("regular.ttf", 45) # Check menor para caber na bolinha
+    except:
+        f_h1 = f_h2 = f_body = f_bold = f_check = ImageFont.load_default()
+
+    # --- COMEÇA O DESENHO ---
+
+    # TOPO SÓLIDO
     draw.rectangle([(0, 0), (W, 250)], fill=LARANJA)
     try:
         logo = Image.open("logo.png").convert("RGBA")
@@ -41,38 +65,38 @@ def criar_proposta(dados):
         logo = logo.resize((int(logo.width * ratio), 200))
         img.paste(logo, ((W - logo.width)//2, 25), logo)
     except:
-        draw.text((W//2, 100), "LOGO LEGACY", font=font_h1, fill=BRANCO, anchor="mm")
+        draw.text((W//2, 100), "LOGO LEGACY", font=f_h1, fill=BRANCO, anchor="mm")
 
-    # 2. INFORMAÇÕES
+    # DADOS DO CLIENTE
     y = 280
+    # Caixa transparente atrás dos dados
+    draw_overlay.rectangle([(20, y), (W-20, y+140)], fill=BRANCO_TRANSP)
+    draw.text((50, y+10), f"Cliente: {dados['cliente']}", font=f_h2, fill=CINZA)
+    draw.text((50, y+70), f"Consultor: {dados['consultor']}", font=f_bold, fill=LARANJA)
     
-    # Cliente e Consultor
-    draw.text((50, y), f"Cliente: {dados['cliente']}", font=font_h2, fill=CINZA)
-    y += 60
-    draw.text((50, y), f"Consultor: {dados['consultor']}", font=font_bold, fill=LARANJA)
-    
-    y += 70
-    draw.rectangle([(40, y), (W-40, y+220)], fill=CLARO)
-    
-    # Bloco Carro
-    draw.text((W//2, y+40), f"{dados['modelo']} ({dados['ano']})", font=font_h2, fill=CINZA, anchor="ma", align="center")
-    draw.text((W//2, y+130), f"FIPE: {dados['fipe']}", font=font_h1, fill=LARANJA, anchor="ma")
+    y += 160
+    # Caixa transparente do carro
+    draw_overlay.rectangle([(20, y), (W-20, y+220)], fill=BRANCO_TRANSP)
+    draw.text((W//2, y+40), f"{dados['modelo']} ({dados['ano']})", font=f_h2, fill=CINZA, anchor="ma", align="center")
+    draw.text((W//2, y+130), f"FIPE: {dados['fipe']}", font=f_h1, fill=LARANJA, anchor="ma")
 
-    # 3. TABELA DE PREÇOS
-    y += 260
-    
+    # ÁREA DA TABELA (Fundo transparente grande)
+    y_table_start = y + 240
+    draw_overlay.rectangle([(0, y_table_start), (W, H-250)], fill=BRANCO_TRANSP)
+
+    y = y_table_start + 30
     # Destaque Adesão
-    draw.text((W//2, y), f"Taxa de Adesão: R$ {dados['adesao']}", font=font_h2, fill=CINZA, anchor="ma")
+    draw.text((W//2, y), f"Taxa de Adesão: R$ {dados['adesao']}", font=f_h2, fill=CINZA, anchor="ma")
     
     y += 70
-    margem_nomes = 300
-    largura_col = (W - margem_nomes) // 4
+    margem = 300
+    w_col = (W - margem) // 4
     colunas = ["Econ.", "Básico", "Plus", "Prem."]
     
     # Cabeçalho
     for i, col in enumerate(colunas):
-        x = margem_nomes + (i * largura_col) + (largura_col // 2)
-        draw.text((x, y), col, font=font_bold, fill=LARANJA, anchor="ma")
+        x = margem + (i * w_col) + (w_col // 2)
+        draw.text((x, y), col, font=f_bold, fill=LARANJA, anchor="ma")
     
     y += 50
     draw.line([(40, y), (W-40, y)], fill=CINZA, width=3)
@@ -80,11 +104,11 @@ def criar_proposta(dados):
     # Mensalidades
     y += 30
     for i, preco in enumerate(dados['precos']):
-        x = margem_nomes + (i * largura_col) + (largura_col // 2)
+        x = margem + (i * w_col) + (w_col // 2)
         val = preco.replace("R$ ", "")
-        draw.text((x, y), f"R$\n{val}", font=font_h2, fill=CINZA, anchor="ma", align="center")
+        draw.text((x, y), f"R$\n{val}", font=f_h2, fill=CINZA, anchor="ma", align="center")
 
-    # 4. BENEFÍCIOS
+    # BENEFÍCIOS COM ÍCONES NOVOS
     y += 180
     itens = [
         ("Rastreamento", ["✔", "✔", "✔", "✔"]),
@@ -98,20 +122,23 @@ def criar_proposta(dados):
     ]
 
     for nome, status_lista in itens:
-        draw.text((50, y+10), nome, font=font_body, fill=CINZA)
+        draw.text((40, y+10), nome, font=f_body, fill=CINZA)
         for i, status in enumerate(status_lista):
-            x = margem_nomes + (i * largura_col) + (largura_col // 2)
-            cor = VERDE if status == "✔" else VERMELHO if status == "✖" else CINZA
-            font = font_check if status in ["✔", "✖"] else font_bold
-            draw.text((x, y), status, font=font, fill=cor, anchor="ma")
-        y += 85
+            x = margem + (i * w_col) + (w_col // 2)
+            # Chama a função que desenha as bolinhas
+            desenhar_icone(draw, x, y+25, status, f_check, VERDE_VIVO, VERMELHO_VIVO, BRANCO, CINZA, f_bold)
+        y += 90
 
-    # 5. RODAPÉ
+    # APLICAR TRANSARÊNCIA E RODAPÉ
+    img = Image.alpha_composite(img, overlay)
+    draw = ImageDraw.Draw(img) # Draw final
+
+    # Rodapé Sólido
     draw.rectangle([(0, H-250), (W, H)], fill=LARANJA)
     aviso = "⚠ PAGAMENTO ANTECIPADO ⚠\nGARANTE DESCONTO NA MENSALIDADE!"
-    draw.multiline_text((W//2, H-125), aviso, font=font_h2, fill=BRANCO, anchor="mm", align="center")
+    draw.multiline_text((W//2, H-125), aviso, font=f_h2, fill=BRANCO, anchor="mm", align="center")
 
-    return img
+    return img.convert("RGB")
 
 # --- CÁLCULO MENSALIDADE ---
 def calcular_mensalidades(fipe, regiao):
@@ -134,18 +161,14 @@ def calcular_mensalidades(fipe, regiao):
 
 # --- INTERFACE ---
 st.title("📱 Gerador Legacy Oficial")
-
 c1, c2 = st.columns(2)
 cliente = c1.text_input("Nome do Cliente")
 consultor = c2.text_input("Nome do Consultor")
-
 modelo = st.text_input("Modelo do Veículo")
-
 c3, c4, c5 = st.columns(3)
 ano = c3.text_input("Ano")
 fipe = c4.number_input("Valor FIPE", step=100.0)
 regiao = c5.selectbox("Região", ["Capital", "Serrana"])
-
 adesao = st.text_input("Valor da Adesão (R$)", value="300,00")
 
 if st.button("GERAR PROPOSTA", type="primary"):
@@ -153,15 +176,9 @@ if st.button("GERAR PROPOSTA", type="primary"):
         with st.spinner("Gerando..."):
             precos = calcular_mensalidades(fipe, regiao)
             if precos:
-                dados = {
-                    "cliente": cliente, "consultor": consultor,
-                    "modelo": modelo, "ano": ano, 
-                    "fipe": f"R$ {fipe:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), 
-                    "precos": precos, "adesao": adesao
-                }
+                dados = {"cliente": cliente, "consultor": consultor, "modelo": modelo, "ano": ano, "fipe": f"R$ {fipe:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), "precos": precos, "adesao": adesao}
                 img = criar_proposta(dados)
                 st.image(img, caption="Resultado", width=350)
-                
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
                 st.download_button("📥 BAIXAR IMAGEM", buf.getvalue(), f"Proposta_{cliente}.png", "image/png")
