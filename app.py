@@ -5,7 +5,7 @@ import io
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Gerador Legacy Pro", page_icon="🛡️", layout="centered")
 
-# --- LÓGICA DE NEGÓCIO (Cálculos) ---
+# --- LÓGICA DE NEGÓCIO ---
 def calcular_mensalidades(fipe, regiao):
     tabela = {
         10000: ([75.00, 86.60, 110.40, 151.50], [75.00, 80.60, 93.00, 140.69]),
@@ -24,7 +24,7 @@ def calcular_mensalidades(fipe, regiao):
         if fipe <= teto: return [f"R$ {v:.2f}".replace('.', ',') for v in precos[idx]]
     return None
 
-# --- MOTOR DE DESENHO (SUA VERSÃO OTIMIZADA) ---
+# --- MOTOR DE DESENHO ---
 def criar_proposta(dados):
     # DIMENSÕES
     W, H = 1080, 1350
@@ -32,9 +32,7 @@ def criar_proposta(dados):
     # FUNDO
     try:
         bg = Image.open("fundo.png").convert("RGBA")
-        # Ajuste inteligente: Resize mantendo proporção (Crop) ou esticando? 
-        # Como seu código usou resize direto, mantive, mas o ideal para fundo.png é garantir que seja 1080x1350
-        bg = bg.resize((W, H), Image.LANCZOS)  
+        bg = bg.resize((W, H), Image.LANCZOS)
         img = bg.copy()
     except:
         img = Image.new("RGBA", (W, H), (255, 255, 255, 255))
@@ -51,102 +49,106 @@ def criar_proposta(dados):
 
     # FONTES
     try:
-        f_titulo      = ImageFont.truetype("bold.ttf", 46)   # FIPE (mais contido)
-        f_subtitulo   = ImageFont.truetype("bold.ttf", 34)   # Modelo
-        f_texto       = ImageFont.truetype("regular.ttf", 28) # labels
+        f_titulo      = ImageFont.truetype("bold.ttf", 46)
+        f_subtitulo   = ImageFont.truetype("bold.ttf", 34)
+        f_texto       = ImageFont.truetype("regular.ttf", 28)
         f_negrito     = ImageFont.truetype("bold.ttf", 28)
         f_tabela_head = ImageFont.truetype("bold.ttf", 26)
         f_tabela_val  = ImageFont.truetype("bold.ttf", 32)
         f_aviso       = ImageFont.truetype("regular.ttf", 22)
+        # AJUSTE SOLICITADO: Tamanho 30
         f_check       = ImageFont.truetype("bold.ttf", 30)
         f_small       = ImageFont.truetype("regular.ttf", 24)
     except:
         f_titulo = f_subtitulo = f_texto = f_negrito = f_tabela_head = f_tabela_val = f_aviso = f_check = f_small = ImageFont.load_default()
 
     # =========================================================
-    # DIAGRAMAÇÃO / POSIÇÕES FIXAS (1080x1350)
+    # DIAGRAMAÇÃO
     # =========================================================
     MARGEM_X = 70
     CENTRO_X = W // 2
 
-    # ZONAS (baseadas no seu fundo)
-    TOPO_Y0       = 170    # começa abaixo do logo
-    # TOPO_Y_MAX    = 520    # (Referência visual apenas)
-    # VEIC_Y0       = 520    # (Referência visual apenas)
-    BASE_Y0       = 860    # começa a tabela/benefícios
-    RODAPE_Y      = 1290   # mensagens finais
+    # ZONAS (Eixo Y)
+    TOPO_Y0       = 170    
+    BASE_Y0       = 860    
+    RODAPE_Y      = 1290   
 
-    # Painel translúcido pra leitura (tabela + benefícios)
+    # Painel translúcido
     PAINEL_X0 = 45
     PAINEL_X1 = W - 45
     PAINEL_Y0 = BASE_Y0 - 20
     PAINEL_Y1 = H - 70
+
+    # =========================================================
+    # CÁLCULO DO GRID (MATEMÁTICA CORRIGIDA)
+    # =========================================================
+    # Área total disponível dentro do painel (com margem interna de 20px)
+    area_x0 = PAINEL_X0 + 20
+    area_x1 = PAINEL_X1 - 20
+    area_w  = area_x1 - area_x0
+
+    # 1) Coluna fixa para Rótulos (Nomes)
+    label_w = 300 
+    
+    # 2) Colunas dinâmicas para Dados (4 colunas)
+    cols_w  = area_w - label_w
+    col_w   = cols_w / 4
+
+    # Coordenadas X:
+    # x_label: Onde começa o texto do nome (alinhado à esquerda)
+    # x_cols: Lista com o CENTRO exato de cada uma das 4 colunas de dados
+    x_label = area_x0 + 10
+    x_cols = [area_x0 + label_w + (i * col_w) + (col_w / 2) for i in range(4)]
     # =========================================================
 
     # --- 1) HEADER (TOPO) ---
     y = TOPO_Y0
 
-    # Linha 1: Proposta para
     draw.text((MARGEM_X, y), "Proposta para:", font=f_texto, fill=CINZA_TEXTO)
     draw.text((MARGEM_X + 215, y), dados["cliente"], font=f_negrito, fill=AZUL_LEGACY)
     y += 42
 
-    # Linha 2: Consultor
     draw.text((MARGEM_X, y), f"Consultor(a): {dados['consultor']}", font=f_negrito, fill=LARANJA)
     y += 52
 
-    # Divisor
     draw.line([(MARGEM_X, y), (W - MARGEM_X, y)], fill=(210, 210, 210, 255), width=2)
     y += 32
 
-    # Modelo (centralizado)
     draw.text((CENTRO_X, y), dados["modelo"], font=f_subtitulo, fill=PRETO, anchor="ma")
     y += 44
 
-    # Ano + FIPE (centralizado)
     info_fipe = f"Ano: {dados['ano']}  |  FIPE: {dados['fipe']}"
     draw.text((CENTRO_X, y), info_fipe, font=f_titulo, fill=AZUL_LEGACY, anchor="ma")
     y += 70
 
-    # Adesão (badge) — ainda no topo (antes dos veículos)
     badge_w, badge_h = 460, 60
     bx0 = CENTRO_X - badge_w // 2
     by0 = y
-    # Radius funciona no Pillow moderno
     draw.rounded_rectangle([bx0, by0, bx0 + badge_w, by0 + badge_h], radius=14, fill=(245, 245, 245, 255))
     draw.text((CENTRO_X, by0 + 18), f"Adesão: R$ {dados['adesao']}", font=f_subtitulo, fill=PRETO, anchor="ma")
 
-    # GARANTIA: não desenhar mais nada na área dos veículos
-    # (pulamos direto para a BASE)
-    y = BASE_Y0
-
-    # --- 2) PAINEL BASE (TABELA + BENEFÍCIOS) ---
+    # --- 2) PAINEL BASE ---
     draw.rounded_rectangle([PAINEL_X0, PAINEL_Y0, PAINEL_X1, PAINEL_Y1], radius=24, fill=(255, 255, 255, 235))
 
-    largura_util = (PAINEL_X1 - PAINEL_X0) - 40
-    start_x = PAINEL_X0 + 20
-    largura_col = largura_util // 4
-
-    # Títulos das colunas
+    # Títulos das colunas (Usando o Grid Novo para alinhar perfeitamente)
     colunas = ["Econ.", "Básico", "Plus", "Prem."]
     y_head = BASE_Y0 + 10
+    
     for i, col in enumerate(colunas):
-        cx = start_x + (i * largura_col) + (largura_col // 2)
-        draw.text((cx, y_head), col, font=f_tabela_head, fill=LARANJA, anchor="ma")
+        # Usa x_cols[i] para garantir que o título fique centralizado com os checks abaixo
+        draw.text((x_cols[i], y_head), col, font=f_tabela_head, fill=LARANJA, anchor="ma")
 
-    # Linha separadora
     y_line = y_head + 32
-    draw.line([(start_x, y_line), (start_x + largura_util, y_line)], fill=PRETO, width=3)
+    draw.line([(area_x0, y_line), (area_x1, y_line)], fill=PRETO, width=3)
 
-    # Valores (1 linha “R$” + número)
+    # Valores (Usando o Grid Novo)
     y_val = y_line + 16
     for i, p in enumerate(dados["precos"]):
-        cx = start_x + (i * largura_col) + (largura_col // 2)
         valor_limpo = p.replace("R$ ", "")
-        draw.text((cx, y_val), "R$", font=f_small, fill=PRETO, anchor="ma")
-        draw.text((cx, y_val + 26), valor_limpo, font=f_tabela_val, fill=PRETO, anchor="ma")
+        draw.text((x_cols[i], y_val), "R$", font=f_small, fill=PRETO, anchor="ma")
+        draw.text((x_cols[i], y_val + 26), valor_limpo, font=f_tabela_val, fill=PRETO, anchor="ma")
 
-    # --- 3) BENEFÍCIOS (grid enxuto) ---
+    # --- 3) BENEFÍCIOS (GRID CORRIGIDO 5 COLUNAS) ---
     itens = [
         ("Rastreamento", ["✔", "✔", "✔", "✔"]),
         ("Reboque",      ["200", "400", "1mil", "1mil"]),
@@ -158,30 +160,35 @@ def criar_proposta(dados):
         ("Gás (GNV)",    ["✖", "✖", "✖", "✔"]),
     ]
 
-    # Função interna para ícones
-    def desenhar_icone_local(draw_obj, x, y, status):
+    # Função local de desenho
+    def desenhar_status(x, y_mid, status):
         if status == "✔":
-            draw_obj.text((x, y), "✔", font=f_check, fill=VERDE, anchor="mm")
+            draw.text((x, y_mid), "✔", font=f_check, fill=VERDE, anchor="mm")
         elif status == "✖":
-            draw_obj.text((x, y), "✖", font=f_check, fill=VERMELHO, anchor="mm")
+            draw.text((x, y_mid), "✖", font=f_check, fill=VERMELHO, anchor="mm")
         else:
-            draw_obj.text((x, y), status, font=f_check, fill=PRETO, anchor="mm")
+            draw.text((x, y_mid), status, font=f_check, fill=PRETO, anchor="mm")
 
-    # Começa abaixo dos preços
+    # Configuração de Linhas
     y_b = y_val + 86
-    row_h = 32
+    row_h = 52 # Mais respiro conforme solicitado
 
-    # Linha guia sutil
-    draw.line([(start_x, y_b - 14), (start_x + largura_util, y_b - 14)], fill=(220, 220, 220, 255), width=2)
+    # Linha guia sutil inicial
+    draw.line([(area_x0, y_b - 14), (area_x1, y_b - 14)], fill=(220, 220, 220, 255), width=2)
 
     for nome, status_lista in itens:
-        draw.text((start_x, y_b), nome, font=f_texto, fill=CINZA_TEXTO, anchor="la")
+        y_mid = y_b + (row_h / 2) - 5 # -5 ajuste visual para centralizar verticalmente com a fonte
+
+        # 1. Nome do benefício (Coluna Fixa) - Anchor Left Middle
+        draw.text((x_label, y_mid), nome, font=f_texto, fill=CINZA_TEXTO, anchor="lm")
+
+        # 2. Status (4 Colunas Dinâmicas) - Anchor Middle Middle
         for i, status in enumerate(status_lista):
-            cx = start_x + (i * largura_col) + (largura_col // 2)
-            desenhar_icone_local(draw, cx, y_b + 14, status)
+            desenhar_status(x_cols[i], y_mid, status)
+
         y_b += row_h
 
-    # --- 4) RODAPÉ (dentro do painel) ---
+    # --- 4) RODAPÉ ---
     aviso_promo = "⚠ PAGAMENTO ANTECIPADO GERA DESCONTO ⚠"
     draw.text((CENTRO_X, RODAPE_Y), aviso_promo, font=f_negrito, fill=LARANJA, anchor="mm")
 
@@ -219,7 +226,7 @@ if st.button("GERAR COTAÇÃO", type="primary"):
                     "adesao": adesao
                 }
                 img = criar_proposta(dados)
-                st.image(img, caption="Layout Final", width=400)
+                st.image(img, caption="Layout Final Corrigido", width=400)
                 
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
