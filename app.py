@@ -1,7 +1,6 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 import io
-from datetime import datetime
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gerador Legacy Mobile", page_icon="📱", layout="centered")
@@ -40,7 +39,7 @@ def criar_proposta_automatica(dados):
     draw = ImageDraw.Draw(img)
     
     # --- CORES ---
-    LARANJA_LEGACY = (243, 112, 33) # Cor aproximada
+    LARANJA_LEGACY = (243, 112, 33) 
     CINZA_ESCURO = (50, 50, 50)
     CINZA_CLARO = (240, 240, 240)
     BRANCO = (255, 255, 255)
@@ -49,102 +48,96 @@ def criar_proposta_automatica(dados):
 
     # --- FONTES ---
     try:
-        # Caminhos Linux (Streamlit Cloud)
         base_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans"
-        font_h1 = ImageFont.truetype(f"{base_path}-Bold.ttf", 80) # Títulos Grandes
-        font_h2 = ImageFont.truetype(f"{base_path}-Bold.ttf", 50) # Subtítulos
-        font_body = ImageFont.truetype(f"{base_path}.ttf", 40)    # Texto normal
-        font_bold = ImageFont.truetype(f"{base_path}-Bold.ttf", 40) # Texto negrito
-        font_small = ImageFont.truetype(f"{base_path}.ttf", 30)   # Texto pequeno
-        font_check = ImageFont.truetype(f"{base_path}.ttf", 50)   # Checks
+        font_h1 = ImageFont.truetype(f"{base_path}-Bold.ttf", 80)
+        font_h2 = ImageFont.truetype(f"{base_path}-Bold.ttf", 50)
+        font_body = ImageFont.truetype(f"{base_path}.ttf", 40)
+        font_bold = ImageFont.truetype(f"{base_path}-Bold.ttf", 40)
+        font_small = ImageFont.truetype(f"{base_path}.ttf", 30)
+        font_check = ImageFont.truetype(f"{base_path}.ttf", 50)
     except:
-        # Fallback simples
         font_h1 = font_h2 = font_body = font_bold = font_small = font_check = ImageFont.load_default()
 
     # --- 1. CABEÇALHO ---
-    # Barra Laranja no topo
     draw.rectangle([(0, 0), (W, 250)], fill=LARANJA_LEGACY)
     
-    # Tentar colocar o Logo
     try:
-        logo = Image.open("logo.png") # O NOME DO ARQUIVO DEVE SER ESSE
-        # Redimensionar logo mantendo proporção (altura max 200)
+        logo = Image.open("logo.png")
+        if logo.mode != 'RGBA': logo = logo.convert('RGBA')
+        
+        # Redimensionar logo (max altura 200)
         ratio = 200 / logo.height
         new_size = (int(logo.width * ratio), 200)
         logo = logo.resize(new_size)
-        # Centralizar logo
+        
+        # Centralizar
         logo_x = (W - new_size[0]) // 2
-        img.paste(logo, (logo_x, 25), logo if logo.mode == 'RGBA' else None)
+        img.paste(logo, (logo_x, 25), logo)
     except:
-        draw.text((W//2 - 100, 80), "LOGO LEGACY", font=font_h1, fill=BRANCO)
+        draw.text((W//2 - 200, 80), "LOGO LEGACY (Faltando)", font=font_h2, fill=BRANCO)
 
     # --- 2. DADOS DO CLIENTE E CARRO ---
     cursor_y = 280
     
-    # Texto de Saudação
     texto_cliente = f"Proposta para: {dados['cliente']}"
-    w_text = draw.textlength(texto_cliente, font=font_h2)
-    draw.text(((W - w_text)/2, cursor_y), texto_cliente, font=font_h2, fill=CINZA_ESCURO)
+    # Centralização manual simples para fallback
+    draw.text((50, cursor_y), texto_cliente, font=font_h2, fill=CINZA_ESCURO)
     
     cursor_y += 80
     
-    # Caixa cinza com dados do carro
-    draw.rectangle([(50, cursor_y), (W-50, cursor_y + 250)], fill=CINZA_CLARO, outline=None)
+    # Caixa cinza
+    draw.rectangle([(50, cursor_y), (W-50, cursor_y + 250)], fill=CINZA_CLARO)
     
-    # Detalhes do Carro (Centralizado na caixa cinza)
+    # Detalhes do Carro
     info_carro = f"{dados['modelo']}\n{dados['ano']}"
-    draw.multiline_text((W//2, cursor_y + 30), info_carro, font=font_h2, fill=LARANJA_LEGACY, anchor="ma", align="center")
+    draw.text((W//2 - 150, cursor_y + 30), info_carro, font=font_h2, fill=LARANJA_LEGACY)
     
-    # Valor FIPE grande
-    draw.text((W//2, cursor_y + 160), f"FIPE: {dados['fipe_texto']}", font=font_h1, fill=CINZA_ESCURO, anchor="ma")
+    draw.text((W//2 - 250, cursor_y + 160), f"FIPE: {dados['fipe_texto']}", font=font_h1, fill=CINZA_ESCURO)
 
     cursor_y += 300
 
     # --- 3. TABELA DE PLANOS ---
-    # Cabeçalho da Tabela
     colunas = ["Econômico", "Básico", "Plus", "Premium"]
     largura_col = W // 4
     
     for i, col in enumerate(colunas):
-        x_pos = i * largura_col + (largura_col // 2)
-        draw.text((x_pos, cursor_y), col, font=font_bold, fill=LARANJA_LEGACY, anchor="ma")
+        x_pos = i * largura_col + 20
+        # Apenas as 3 primeiras letras se for mobile mto pequeno ou nome completo
+        nome_col = col if i == 3 else col[:3] + "."
+        draw.text((x_pos, cursor_y), nome_col, font=font_h2, fill=LARANJA_LEGACY)
     
     cursor_y += 60
-    draw.line([(50, cursor_y), (W-50, cursor_y)], fill=CINZA_ESCURO, width=2) # Linha separadora
+    draw.line([(50, cursor_y), (W-50, cursor_y)], fill=CINZA_ESCURO, width=2)
     cursor_y += 20
 
-    # Linha: MENSALIDADE (Destaque)
+    # Preços
     precos = dados['lista_precos']
     for i, preco in enumerate(precos):
-        x_pos = i * largura_col + (largura_col // 2)
-        # Limpar "R$ " para caber melhor se precisar
+        x_pos = i * largura_col + 10
         valor_limpo = preco.replace("R$ ", "")
-        draw.text((x_pos, cursor_y), f"R$\n{valor_limpo}", font=font_h2, fill=CINZA_ESCURO, anchor="ma", align="center")
+        draw.text((x_pos, cursor_y), valor_limpo, font=font_bold, fill=CINZA_ESCURO)
     
-    cursor_y += 140
+    cursor_y += 100
 
     # --- GRID DE BENEFÍCIOS ---
-    # Configuração: (Nome do Benefício, [Eco, Bas, Plus, Prem])
     beneficios = [
         ("Rastreamento", ["✔", "✔", "✔", "✔"]),
-        ("Reboque", ["200km", "400km", "1000km", "1000km"]),
+        ("Reboque", ["200", "400", "1mil", "1mil"]),
         ("Roubo/Furto", ["✖", "✔", "✔", "✔"]),
         ("Colisão/PT", ["✖", "✖", "✔", "✔"]),
         ("Terceiros", ["✖", "✖", "✔", "✔"]),
         ("Vidros", ["✖", "✖", "✔", "✔"]),
-        ("Carro Reserva", ["✖", "✖", "10d", "30d"]),
+        ("Carro Res.", ["✖", "✖", "10d", "30d"]),
         ("Cob. GNV", ["✖", "✖", "✖", "✔"]),
     ]
 
     for nome, status_lista in beneficios:
-        # Desenhar fundo alternado para facilitar leitura
-        # draw.rectangle([(0, cursor_y-10), (W, cursor_y+50)], fill=CINZA_CLARO)
+        # Nome do benefício na esquerda (pequeno)
+        draw.text((30, cursor_y + 10), nome, font=font_small, fill=CINZA_ESCURO)
         
-        # Nome do benefício (pequeno no centro ou lateral?) 
-        # Vamos colocar os ícones alinhados nas colunas
-        
+        # Ícones
         for i, status in enumerate(status_lista):
-            x_pos = i * largura_col + (largura_col // 2)
+            x_pos = i * largura_col + (largura_col // 2) + 20
             
             cor = CINZA_ESCURO
             fonte_uso = font_bold
@@ -156,26 +149,22 @@ def criar_proposta_automatica(dados):
                 cor = VERMELHO
                 fonte_uso = font_check
             
-            draw.text((x_pos, cursor_y), status, font=fonte_uso, fill=cor, anchor="ma")
+            draw.text((x_pos, cursor_y), status, font=fonte_uso, fill=cor)
         
-        # Nome do benefício (centralizado em cima dos ícones ou na lateral esquerda bem pequeno)
-        draw.text((50, cursor_y + 10), nome, font=font_small, fill=CINZA_ESCURO, anchor="lm")
-        
-        cursor_y += 80 # Próxima linha
+        cursor_y += 80
 
-    # --- 4. RODAPÉ (AVISO) ---
+    # --- 4. RODAPÉ ---
     y_aviso = H - 250
     draw.rectangle([(0, y_aviso), (W, H)], fill=LARANJA_LEGACY)
     
-    aviso_texto = "⚠ PAGAMENTO ANTECIPADO ⚠\nGARANTE DESCONTO NA MENSALIDADE!\n\nConsulte condições com seu consultor."
-    draw.multiline_text((W//2, y_aviso + 125), aviso_texto, font=font_bold, fill=BRANCO, anchor="mm", align="center")
+    aviso_texto = "⚠ PAGAMENTO ANTECIPADO ⚠\nGARANTE DESCONTO NA MENSALIDADE!"
+    draw.text((100, y_aviso + 100), aviso_texto, font=font_h2, fill=BRANCO)
 
     return img
 
 # --- INTERFACE ---
 st.title("📱 Gerador Automático (Story)")
 
-# Formulário Simplificado
 col1, col2 = st.columns(2)
 nome_consultor = col1.text_input("Nome do Consultor")
 nome_cliente = col2.text_input("Nome do Cliente")
@@ -202,8 +191,7 @@ if st.button("GERAR PROPOSTA 9:16", type="primary"):
             
             img_final = criar_proposta_automatica(dados)
             
-            # Mostrar e Baixar
-            st.image(img_final, caption="Visualização", width=300) # Mostra menor pra caber na tela
+            st.image(img_final, caption="Visualização", width=300)
             
             buf = io.BytesIO()
             img_final.save(buf, format="PNG")
