@@ -8,45 +8,41 @@ st.set_page_config(page_title="Gerador Legacy Story", page_icon="📱", layout="
 # --- FUNÇÃO PARA ÍCONES (Bolinhas Vívidas) ---
 def desenhar_icone(draw_obj, x, y, status, font_icon, verde, vermelho, branco, cinza, font_bold):
     if status == "✔":
-        raio = 30
-        # Bolinha Verde sem transparência
+        raio = 28 # Levemente menor para caber melhor
         draw_obj.ellipse([(x-raio, y-raio), (x+raio, y+raio)], fill=verde)
         draw_obj.text((x, y), "✔", font=font_icon, fill=branco, anchor="mm")
     elif status == "✖":
-        raio = 30
-        # Bolinha Vermelha sem transparência
+        raio = 28
         draw_obj.ellipse([(x-raio, y-raio), (x+raio, y+raio)], fill=vermelho)
         draw_obj.text((x, y), "✖", font=font_icon, fill=branco, anchor="mm")
     else:
-        # Texto Cinza Escuro/Preto
         draw_obj.text((x, y), status, font=font_bold, fill=cinza, anchor="ma")
 
 # --- DESENHO DA IMAGEM ---
 def criar_proposta(dados):
     W, H = 1080, 1920
     
-    # 1. CARREGAR FUNDO (Original, sem filtros)
+    # 1. CARREGAR SEU FUNDO PERSONALIZADO
     try:
-        # Abre o fundo e garante que ele preencha tudo
         bg = Image.open("fundo.jpg").convert("RGBA")
         img = bg.resize((W, H), Image.LANCZOS)
     except:
-        # Se não tiver fundo, usa branco puro
+        # Se não tiver fundo, usa branco (para não dar erro)
         img = Image.new('RGBA', (W, H), color=(255, 255, 255, 255))
 
-    # Criamos o desenhista direto na imagem original
     draw = ImageDraw.Draw(img)
 
-    # --- PALETA DE CORES "SUPER VÍVIDA" (Sem transparência) ---
+    # --- CORES (Preto Absoluto para leitura máxima) ---
     LARANJA = (243, 112, 33, 255)
-    PRETO = (0, 0, 0, 255)         # Preto total para leitura máxima
+    PRETO = (0, 0, 0, 255)
     BRANCO = (255, 255, 255, 255)
-    VERDE_VIVO = (0, 200, 0, 255)  # Verde forte
-    VERMELHO_VIVO = (220, 0, 0, 255) # Vermelho forte
-    CINZA_ESCURO = (40, 40, 40, 255) # Quase preto
+    VERDE_VIVO = (0, 200, 0, 255)
+    VERMELHO_VIVO = (220, 0, 0, 255)
+    CINZA_ESCURO = (40, 40, 40, 255)
 
-    # FONTES LOCAIS
+    # --- FONTES LOCAIS ---
     try:
+        # Carrega as fontes que você subiu
         f_h1 = ImageFont.truetype("bold.ttf", 70)
         f_h2 = ImageFont.truetype("bold.ttf", 45)
         f_body = ImageFont.truetype("regular.ttf", 35)
@@ -55,60 +51,63 @@ def criar_proposta(dados):
     except:
         f_h1 = f_h2 = f_body = f_bold = f_check = ImageFont.load_default()
 
-    # --- CABEÇALHO ---
-    # Tarja Laranja no topo (opcional, se quiser tirar, apague essa linha)
-    draw.rectangle([(0, 0), (W, 250)], fill=LARANJA)
-    
-    try:
-        logo = Image.open("logo.png").convert("RGBA")
-        ratio = 200 / logo.height
-        logo = logo.resize((int(logo.width * ratio), 200))
-        # Centraliza logo
-        img.paste(logo, ((W - logo.width)//2, 25), logo)
-    except:
-        draw.text((W//2, 100), "LOGO LEGACY", font=f_h1, fill=BRANCO, anchor="mm")
+    # ==============================================================================
+    # CONFIGURAÇÃO DA "DIAGRAMAÇÃO" (Margens)
+    # ==============================================================================
+    MARGEM_TOPO = 420   # Pula os 420px de cima (onde fica seu Logo no fundo)
+    MARGEM_LADO = 60    # Espaço em branco nas laterais esquerda/direita
+    # ==============================================================================
+
+    # Onde começa a escrever (Cursor Y)
+    y = MARGEM_TOPO
 
     # --- DADOS DO CLIENTE ---
-    y = 280
-    # Desenhando direto no fundo, sem caixas brancas
-    draw.text((50, y+10), f"Cliente: {dados['cliente']}", font=f_h2, fill=PRETO)
-    draw.text((50, y+70), f"Consultor: {dados['consultor']}", font=f_bold, fill=LARANJA)
+    # Escreve alinhado à esquerda, respeitando a margem lateral
+    draw.text((MARGEM_LADO, y), f"Cliente: {dados['cliente']}", font=f_h2, fill=PRETO)
     
-    y += 160
-    # Bloco do Carro
-    draw.text((W//2, y+40), f"{dados['modelo']} ({dados['ano']})", font=f_h2, fill=PRETO, anchor="ma", align="center")
-    draw.text((W//2, y+130), f"FIPE: {dados['fipe']}", font=f_h1, fill=LARANJA, anchor="ma")
+    # Consultor na mesma linha ou abaixo? Vamos colocar abaixo mais perto
+    y += 60 
+    draw.text((MARGEM_LADO, y), f"Consultor: {dados['consultor']}", font=f_bold, fill=LARANJA)
+    
+    y += 100
+    # --- BLOCO DO CARRO (Centralizado) ---
+    draw.text((W//2, y), f"{dados['modelo']}", font=f_h2, fill=PRETO, anchor="ma", align="center")
+    draw.text((W//2, y+60), f"Ano: {dados['ano']} | FIPE: {dados['fipe']}", font=f_h1, fill=LARANJA, anchor="ma")
 
     # --- TABELA DE PREÇOS ---
-    y_table_start = y + 240
-    y = y_table_start + 30
+    y += 180
     
     # Destaque Adesão
     draw.text((W//2, y), f"Taxa de Adesão: R$ {dados['adesao']}", font=f_h2, fill=PRETO, anchor="ma")
     
-    y += 70
-    margem = 300
-    w_col = (W - margem) // 4
+    y += 80
+    
+    # Configuração das Colunas da Tabela
+    # A largura útil é a largura total menos as duas margens laterais
+    largura_util = W - (MARGEM_LADO * 2)
+    largura_coluna = largura_util // 4
     colunas = ["Econ.", "Básico", "Plus", "Prem."]
     
     # Títulos das Colunas
     for i, col in enumerate(colunas):
-        x = margem + (i * w_col) + (w_col // 2)
+        # O X é calculado a partir da MARGEM_LADO
+        x = MARGEM_LADO + (i * largura_coluna) + (largura_coluna // 2)
         draw.text((x, y), col, font=f_bold, fill=LARANJA, anchor="ma")
     
     y += 50
-    # Linha divisória preta forte
-    draw.line([(40, y), (W-40, y)], fill=PRETO, width=4)
+    # Linha divisória
+    draw.line([(MARGEM_LADO, y), (W - MARGEM_LADO, y)], fill=PRETO, width=4)
     
-    y += 30
+    y += 20
     # Valores Mensais
     for i, preco in enumerate(dados['precos']):
-        x = margem + (i * w_col) + (w_col // 2)
+        x = MARGEM_LADO + (i * largura_coluna) + (largura_coluna // 2)
         val = preco.replace("R$ ", "")
         draw.text((x, y), f"R$\n{val}", font=f_h2, fill=PRETO, anchor="ma", align="center")
 
-    # --- BENEFÍCIOS ---
-    y += 180
+    # --- BENEFÍCIOS (GRID) ---
+    y += 150 # Espaço entre preços e benefícios
+    
     itens = [
         ("Rastreamento", ["✔", "✔", "✔", "✔"]),
         ("Reboque", ["200", "400", "1mil", "1mil"]),
@@ -121,16 +120,17 @@ def criar_proposta(dados):
     ]
 
     for nome, status_lista in itens:
-        draw.text((40, y+10), nome, font=f_body, fill=PRETO)
+        # Nome do benefício
+        draw.text((MARGEM_LADO, y+10), nome, font=f_body, fill=PRETO)
+        
+        # Ícones
         for i, status in enumerate(status_lista):
-            x = margem + (i * w_col) + (w_col // 2)
+            x = MARGEM_LADO + (i * largura_coluna) + (largura_coluna // 2)
             desenhar_icone(draw, x, y+25, status, f_check, VERDE_VIVO, VERMELHO_VIVO, BRANCO, CINZA_ESCURO, f_bold)
-        y += 90
+        
+        y += 85 # Espaço entre linhas de benefícios
 
-    # --- RODAPÉ ---
-    draw.rectangle([(0, H-250), (W, H)], fill=LARANJA)
-    aviso = "⚠ PAGAMENTO ANTECIPADO ⚠\nGARANTE DESCONTO NA MENSALIDADE!"
-    draw.multiline_text((W//2, H-125), aviso, font=f_h2, fill=BRANCO, anchor="mm", align="center")
+    # NÃO DESENHAMOS RODAPÉ (Pois já está no seu fundo.jpg)
 
     return img.convert("RGB")
 
