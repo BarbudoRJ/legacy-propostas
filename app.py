@@ -3,152 +3,133 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 
 # --- CONFIGURAÇÃO ---
-st.set_page_config(page_title="Gerador Legacy Pro", page_icon="🛡️", layout="centered")
+st.set_page_config(page_title="Gerador Tabela Legacy", page_icon="📝", layout="centered")
 
-# --- FUNÇÃO ÍCONES ---
+# --- FUNÇÃO CHECKLIST (Ícones vetoriais desenhados) ---
 def desenhar_icone(draw_obj, x, y, status, font_icon, verde, vermelho, cinza):
     if status == "✔":
-        # Check verde simples e limpo
+        # Check verde limpo
         draw_obj.text((x, y), "✔", font=font_icon, fill=verde, anchor="mm")
     elif status == "✖":
-        # X vermelho
+        # X vermelho limpo
         draw_obj.text((x, y), "✖", font=font_icon, fill=vermelho, anchor="mm")
     else:
+        # Texto (ex: 200, 10d)
         draw_obj.text((x, y), status, font=font_icon, fill=cinza, anchor="ma")
 
-# --- DESENHO DA IMAGEM ---
+# --- MOTOR DE DESENHO ---
 def criar_proposta(dados):
-    # MUDANÇA 1: Formato 4:5 (Padrão Feed/Doc Digital) - Mais largo visualmente
-    W, H = 1080, 1350 
+    # DIMENSÕES: 1080 x 1350 (4:5) - Melhor proporção para leitura e tabelas
+    W, H = 1080, 1350
     
-    # 1. FUNDO (Carros/Proteção)
+    # 1. CARREGAR SEU FUNDO (fundo.png)
     try:
-        bg = Image.open("fundo.jpg").convert("RGBA")
-        # Crop central para preencher 1080x1350 sem esticar
-        ratio_w = W / bg.width
-        ratio_h = H / bg.height
-        ratio = max(ratio_w, ratio_h)
+        # Tenta carregar o fundo que você preparou
+        bg = Image.open("fundo.png").convert("RGBA")
+        
+        # Ajusta o tamanho da imagem para caber no canvas sem distorcer (Crop Central)
+        ratio = max(W / bg.width, H / bg.height)
         new_size = (int(bg.width * ratio), int(bg.height * ratio))
         bg = bg.resize(new_size, Image.LANCZOS)
         
-        # Centraliza o crop
+        # Centraliza
         left = (bg.width - W) / 2
         top = (bg.height - H) / 2
         img = bg.crop((left, top, left + W, top + H))
     except:
-        img = Image.new('RGBA', (W, H), color=(240, 240, 240, 255))
+        # Fundo branco de emergência se não achar o arquivo
+        img = Image.new('RGBA', (W, H), color=(255, 255, 255, 255))
 
     draw = ImageDraw.Draw(img)
 
-    # --- PALETA ---
+    # --- PALETA DE CORES ---
     LARANJA = (243, 112, 33, 255)
     AZUL_LEGACY = (0, 35, 95, 255)
-    PRETO = (30, 30, 30, 255)
-    CINZA_TEXTO = (60, 60, 60, 255)
-    BRANCO = (255, 255, 255, 255)
+    PRETO = (20, 20, 20, 255)       # Preto quase total para leitura
+    CINZA_TEXTO = (80, 80, 80, 255)
     VERDE = (0, 180, 0, 255)
     VERMELHO = (200, 0, 0, 255)
 
-    # --- FONTES ---
+    # --- FONTES (Carrega as que você subiu) ---
     try:
-        # Ajustei tamanhos para o novo formato
         f_titulo = ImageFont.truetype("bold.ttf", 55)
-        f_sub = ImageFont.truetype("bold.ttf", 40)
-        f_norm = ImageFont.truetype("regular.ttf", 32)
-        f_bold = ImageFont.truetype("bold.ttf", 32)
-        f_small = ImageFont.truetype("regular.ttf", 26) # Para o rodapé
-        f_check = ImageFont.truetype("bold.ttf", 40)
+        f_subtitulo = ImageFont.truetype("bold.ttf", 40)
+        f_texto = ImageFont.truetype("regular.ttf", 32)
+        f_negrito = ImageFont.truetype("bold.ttf", 32)
+        f_tabela_head = ImageFont.truetype("bold.ttf", 30) # Um pouco menor para caber 4 colunas
+        f_tabela_val = ImageFont.truetype("bold.ttf", 36)
+        f_aviso = ImageFont.truetype("regular.ttf", 26)
+        f_check = ImageFont.truetype("bold.ttf", 38)
     except:
-        f_titulo = f_sub = f_norm = f_bold = f_small = f_check = ImageFont.load_default()
+        f_titulo = f_subtitulo = f_texto = f_negrito = f_tabela_head = f_tabela_val = f_aviso = f_check = ImageFont.load_default()
 
     # ==============================================================================
-    # O "CARD" FLUTUANTE (A MÁGICA)
+    # DIAGRAMAÇÃO (ONDE O TEXTO VAI ENTRAR)
     # ==============================================================================
-    # Margem do Card em relação à borda da imagem
-    PAD = 40 
-    # Cabeçalho do Card (Logo)
-    CARD_TOP = 180 
-    
-    # Desenha o Retângulo Branco (O "Papel")
-    # Deixa um espaço em cima para o Logo "flutuar" ou ficar no topo
-    draw.rectangle([(PAD, CARD_TOP), (W - PAD, H - PAD)], fill=BRANCO)
-    
-    # Borda fina laranja no card (opcional, fica chique)
-    draw.rectangle([(PAD, CARD_TOP), (W - PAD, H - PAD)], outline=LARANJA, width=3)
-
-    # --- LOGO (Fora do Card ou no Topo) ---
-    try:
-        logo = Image.open("logo.png").convert("RGBA")
-        # Logo um pouco maior
-        ratio = 220 / logo.height
-        logo = logo.resize((int(logo.width * ratio), 220))
-        # Posiciona centralizado no TOPO da imagem (sobre o fundo, invadindo um pouco o card)
-        img.paste(logo, ((W - logo.width)//2, 60), logo)
-    except:
-        draw.text((W//2, 100), "LEGACY", font=f_titulo, fill=BRANCO, anchor="mm")
-
+    # Defina aqui onde começa a área útil na sua imagem de fundo
+    MARGEM_SUPERIOR = 250  # Pula o cabeçalho da sua imagem
+    MARGEM_LATERAL = 50    # Espaço nas laterais
     # ==============================================================================
-    # CONTEÚDO DENTRO DO CARD
-    # ==============================================================================
-    # Cursor Y começa dentro do card
-    y = CARD_TOP + 120 
-    MARGIN_INT = PAD + 40 # Margem interna do texto
 
-    # 1. DADOS CLIENTE E CARRO
-    draw.text((MARGIN_INT, y), f"Proposta para:", font=f_norm, fill=CINZA_TEXTO)
-    draw.text((MARGIN_INT + 230, y), f"{dados['cliente']}", font=f_sub, fill=AZUL_LEGACY)
+    y = MARGEM_SUPERIOR
+
+    # --- 1. CABEÇALHO DA PROPOSTA ---
+    # Cliente e Consultor
+    draw.text((MARGEM_LATERAL, y), "Proposta para:", font=f_texto, fill=CINZA_TEXTO)
+    draw.text((MARGEM_LATERAL + 220, y), dados['cliente'], font=f_subtitulo, fill=AZUL_LEGACY)
     
     y += 50
-    draw.text((MARGIN_INT, y), f"Consultor(a): {dados['consultor']}", font=f_bold, fill=LARANJA)
-    
-    y += 70
-    # Linha divisória suave
-    draw.line([(MARGIN_INT, y), (W - MARGIN_INT, y)], fill=(220,220,220,255), width=2)
-    y += 30
+    draw.text((MARGEM_LATERAL, y), f"Consultor(a): {dados['consultor']}", font=f_negrito, fill=LARANJA)
 
-    # Carro (Destaque)
-    carro_txt = f"{dados['modelo']} ({dados['ano']})"
-    fipe_txt = f"FIPE: {dados['fipe']}"
+    y += 80
     
-    # Centralizado no Card
-    center_x = W // 2
-    draw.text((center_x, y), carro_txt, font=f_sub, fill=PRETO, anchor="ma", align="center")
+    # Linha divisória fina
+    draw.line([(MARGEM_LATERAL, y), (W - MARGEM_LATERAL, y)], fill=(200,200,200,255), width=2)
+    y += 40
+
+    # --- 2. DADOS DO VEÍCULO (Centralizado) ---
+    centro_x = W // 2
+    
+    # Modelo do Carro
+    draw.text((centro_x, y), dados['modelo'], font=f_subtitulo, fill=PRETO, anchor="ma", align="center")
     y += 50
-    draw.text((center_x, y), fipe_txt, font=f_titulo, fill=AZUL_LEGACY, anchor="ma", align="center")
-
-    y += 90
-
-    # 2. ADESÃO (Destaque Box)
-    # Caixa cinza claro para a adesão
-    draw.rectangle([(center_x - 200, y), (center_x + 200, y + 60)], fill=(240,240,240,255))
-    draw.text((center_x, y+15), f"Adesão: R$ {dados['adesao']}", font=f_sub, fill=PRETO, anchor="ma")
+    # Ano e Fipe
+    info_fipe = f"Ano: {dados['ano']}  |  FIPE: {dados['fipe']}"
+    draw.text((centro_x, y), info_fipe, font=f_titulo, fill=AZUL_LEGACY, anchor="ma", align="center")
 
     y += 100
 
-    # 3. TABELA DE PREÇOS
-    # Ajuste fino da largura das colunas para não cortar
-    largura_util = W - (MARGIN_INT * 2)
-    col_w = largura_util // 4
+    # --- 3. ADESÃO (Destaque) ---
+    # Box cinza clarinho atrás da adesão para destacar
+    draw.rectangle([(centro_x - 200, y), (centro_x + 200, y + 60)], fill=(245,245,245,255))
+    draw.text((centro_x, y+12), f"Adesão: R$ {dados['adesao']}", font=f_subtitulo, fill=PRETO, anchor="ma")
+
+    y += 100
+
+    # --- 4. TABELA DE PREÇOS ---
+    largura_util = W - (MARGEM_LATERAL * 2)
+    largura_coluna = largura_util // 4
     colunas = ["Econ.", "Básico", "Plus", "Prem."]
 
-    # Cabeçalho Laranja
+    # Títulos das colunas
     for i, col in enumerate(colunas):
-        cx = MARGIN_INT + (i * col_w) + (col_w // 2)
-        draw.text((cx, y), col, font=f_bold, fill=LARANJA, anchor="ma")
+        cx = MARGEM_LATERAL + (i * largura_coluna) + (largura_coluna // 2)
+        draw.text((cx, y), col, font=f_tabela_head, fill=LARANJA, anchor="ma")
     
     y += 45
-    draw.line([(MARGIN_INT, y), (W - MARGIN_INT, y)], fill=PRETO, width=2)
+    # Linha preta da tabela
+    draw.line([(MARGEM_LATERAL, y), (W - MARGEM_LATERAL, y)], fill=PRETO, width=3)
     y += 20
 
-    # Preços
+    # Valores
     for i, p in enumerate(dados['precos']):
-        cx = MARGIN_INT + (i * col_w) + (col_w // 2)
-        val = p.replace("R$ ", "")
-        draw.text((cx, y), f"R$\n{val}", font=f_sub, fill=PRETO, anchor="ma", align="center")
+        cx = MARGEM_LATERAL + (i * largura_coluna) + (largura_coluna // 2)
+        valor_limpo = p.replace("R$ ", "")
+        draw.text((cx, y), f"R$\n{valor_limpo}", font=f_tabela_val, fill=PRETO, anchor="ma", align="center")
 
-    y += 130
+    y += 140
 
-    # 4. BENEFÍCIOS (Compacto)
+    # --- 5. BENEFÍCIOS (GRID) ---
     itens = [
         ("Rastreamento", ["✔", "✔", "✔", "✔"]),
         ("Reboque", ["200", "400", "1mil", "1mil"]),
@@ -160,27 +141,32 @@ def criar_proposta(dados):
         ("Gás (GNV)", ["✖", "✖", "✖", "✔"]),
     ]
 
-    for nome, stats in itens:
-        # Nome menorzinho à esquerda
-        draw.text((MARGIN_INT, y+8), nome, font=f_norm, fill=CINZA_TEXTO)
+    for nome, status_lista in itens:
+        # Nome do benefício
+        draw.text((MARGEM_LATERAL, y+5), nome, font=f_texto, fill=CINZA_TEXTO)
         
-        for i, s in enumerate(stats):
-            cx = MARGIN_INT + (i * col_w) + (col_w // 2)
-            desenhar_icone(draw, cx, y+20, s, f_check, VERDE, VERMELHO, PRETO)
+        # Ícones nas colunas
+        for i, status in enumerate(status_lista):
+            cx = MARGEM_LATERAL + (i * largura_coluna) + (largura_coluna // 2)
+            desenhar_icone(draw, cx, y+5, status, f_check, VERDE, VERMELHO, PRETO)
         
-        y += 60 # Linhas mais compactas
+        y += 60 # Espaçamento entre linhas
 
-    # 5. RODAPÉ (DISCLAIMER)
-    y_final = H - PAD - 60 # Perto da borda inferior do card branco
-    aviso = "A COTAÇÃO PODE SOFRER ALTERAÇÕES BASEADAS NOS VALORES VIGENTES"
-    draw.text((center_x, y_final), aviso, font=f_small, fill=AZUL_LEGACY, anchor="mm", align="center")
+    # --- 6. RODAPÉ (Mensagens) ---
+    # Calculando posição final (perto do fim da imagem)
+    y_rodape = H - 120 
     
-    # Aviso Promoção (Acima do disclaimer)
-    draw.text((center_x, y_final - 40), "⚠ PAGAMENTO ANTECIPADO GERA DESCONTO ⚠", font=f_bold, fill=LARANJA, anchor="mm")
+    # Aviso Promoção (Laranja)
+    aviso_promo = "⚠ PAGAMENTO ANTECIPADO GERA DESCONTO ⚠"
+    draw.text((centro_x, y_rodape - 40), aviso_promo, font=f_negrito, fill=LARANJA, anchor="mm")
+    
+    # Aviso Legal (Azul Legacy)
+    aviso_legal = "A COTAÇÃO PODE SOFRER ALTERAÇÕES BASEADAS NOS VALORES VIGENTES"
+    draw.text((centro_x, y_rodape), aviso_legal, font=f_aviso, fill=AZUL_LEGACY, anchor="mm", align="center")
 
     return img.convert("RGB")
 
-# --- LÓGICA DE NEGÓCIO ---
+# --- LÓGICA DE CÁLCULO ---
 def calcular_mensalidades(fipe, regiao):
     tabela = {
         10000: ([75.00, 86.60, 110.40, 151.50], [75.00, 80.60, 93.00, 140.69]),
@@ -199,11 +185,13 @@ def calcular_mensalidades(fipe, regiao):
         if fipe <= teto: return [f"R$ {v:.2f}".replace('.', ',') for v in precos[idx]]
     return None
 
-# --- APP STREAMLIT ---
-st.title("🛡️ Gerador Legacy Pro (Card)")
+# --- APP ---
+st.title("📝 Gerador de Cotação")
+
 c1, c2 = st.columns(2)
 cliente = c1.text_input("Nome do Cliente")
 consultor = c2.text_input("Nome do Consultor")
+
 modelo = st.text_input("Modelo do Veículo")
 c3, c4, c5 = st.columns(3)
 ano = c3.text_input("Ano")
@@ -211,16 +199,21 @@ fipe = c4.number_input("Valor FIPE", step=100.0)
 regiao = c5.selectbox("Região", ["Capital", "Serrana"])
 adesao = st.text_input("Valor da Adesão (R$)", value="300,00")
 
-if st.button("GERAR COTAÇÃO OFICIAL", type="primary"):
-    if fipe > 0 and cliente and consultor:
-        with st.spinner("Gerando documento..."):
+if st.button("GERAR IMAGEM", type="primary"):
+    if fipe > 0 and cliente:
+        with st.spinner("Desenhando sobre o fundo..."):
             precos = calcular_mensalidades(fipe, regiao)
             if precos:
-                dados = {"cliente": cliente, "consultor": consultor, "modelo": modelo, "ano": ano, "fipe": f"R$ {fipe:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), "precos": precos, "adesao": adesao}
+                dados = {
+                    "cliente": cliente, "consultor": consultor, 
+                    "modelo": modelo, "ano": ano, 
+                    "fipe": f"R$ {fipe:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), 
+                    "precos": precos, "adesao": adesao
+                }
                 img = criar_proposta(dados)
-                st.image(img, caption="Layout Card Proteção", width=400)
+                st.image(img, caption="Resultado Final", width=400)
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
                 st.download_button("📥 BAIXAR IMAGEM", buf.getvalue(), f"Cotacao_{cliente}.png", "image/png")
     else:
-        st.warning("Preencha todos os campos.")
+        st.warning("Preencha os dados principais.")
