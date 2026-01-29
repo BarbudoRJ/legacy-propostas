@@ -5,9 +5,25 @@ import io
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gerador Legacy Premium", page_icon="💎", layout="centered")
 
+# --- FORMATADOR DE TELEFONE (Padrão BR) ---
+def formatar_telefone(tel):
+    if not tel: return ""
+    # Remove tudo que não é número
+    nums = "".join(filter(str.isdigit, tel))
+    
+    # Formata (XX) XXXXX-XXXX
+    if len(nums) == 11:
+        return f"({nums[:2]}) {nums[2:7]}-{nums[7:]}"
+    # Formata (XX) XXXX-XXXX
+    elif len(nums) == 10:
+        return f"({nums[:2]}) {nums[2:6]}-{nums[6:]}"
+    
+    # Se não for número padrão, retorna o que foi digitado
+    return tel
+
 # --- LÓGICA DE CÁLCULO (Backend) ---
 def calcular_mensalidades(fipe, regiao):
-    # Tabela de preços (Exemplo)
+    # Tabela de preços
     tabela = {
         10000: ([75.00, 86.60, 110.40, 151.50], [75.00, 80.60, 93.00, 140.69]),
         20000: ([75.00, 110.60, 137.49, 170.49], [75.00, 108.10, 125.00, 167.00]),
@@ -25,7 +41,7 @@ def calcular_mensalidades(fipe, regiao):
         if fipe <= teto: return [f"R$ {v:.2f}".replace('.', ',') for v in precos[idx]]
     return None
 
-# --- MOTOR GRÁFICO (Seu código otimizado) ---
+# --- MOTOR GRÁFICO ---
 def criar_proposta(dados):
     W, H = 1080, 1350
 
@@ -46,7 +62,7 @@ def criar_proposta(dados):
     CINZA_TEXTO = (90, 90, 90, 255)
 
     # Esquelmorfo (Glassmorphism)
-    PAINEL_FILL   = (255, 255, 255, 210)   # Branco translúcido
+    PAINEL_FILL   = (255, 255, 255, 210)
     PAINEL_BORDA  = (220, 220, 220, 255)
     PAINEL_BRILHO = (255, 255, 255, 120)
 
@@ -55,8 +71,8 @@ def criar_proposta(dados):
 
     # --- FONTES ---
     try:
-        f_titulo      = ImageFont.truetype("bold.ttf", 46)   # FIPE
-        f_subtitulo   = ImageFont.truetype("bold.ttf", 34)   # Modelo
+        f_titulo      = ImageFont.truetype("bold.ttf", 46)
+        f_subtitulo   = ImageFont.truetype("bold.ttf", 34)
         f_texto       = ImageFont.truetype("regular.ttf", 28)
         f_negrito     = ImageFont.truetype("bold.ttf", 28)
         f_head_planos = ImageFont.truetype("bold.ttf", 26)
@@ -78,7 +94,12 @@ def criar_proposta(dados):
     base_draw.text((MARGEM_X + 215, y), dados["cliente"], font=f_negrito, fill=AZUL_LEGACY)
     y += 42
 
-    base_draw.text((MARGEM_X, y), f"Consultor(a): {dados['consultor']}", font=f_negrito, fill=LARANJA)
+    # --- CONSULTOR + TELEFONE (ATUALIZADO) ---
+    texto_consultor = f"Consultor(a): {dados['consultor']}"
+    if dados['telefone']:
+        texto_consultor += f"   •   {dados['telefone']}"
+
+    base_draw.text((MARGEM_X, y), texto_consultor, font=f_negrito, fill=LARANJA)
     y += 55
 
     base_draw.line([(MARGEM_X, y), (W - MARGEM_X, y)], fill=(210, 210, 210, 255), width=2)
@@ -98,31 +119,28 @@ def criar_proposta(dados):
     base_draw.text((CENTRO_X, by0 + 20), f"Adesão: R$ {dados['adesao']}", font=f_subtitulo, fill=PRETO, anchor="ma")
 
     # =========================================================
-    # 2) PAINEL ESQUELMORFO (CAMADAS)
+    # 2) PAINEL ESQUELMORFO
     # =========================================================
     painel_x0, painel_x1 = 55, W - 55
     painel_y0, painel_y1 = 650, H - 40 
     painel_w = painel_x1 - painel_x0
     painel_h = painel_y1 - painel_y0
 
-    # Sombra (Layer 1)
+    # Sombra
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow)
     sd.rounded_rectangle([painel_x0+6, painel_y0+10, painel_x1+6, painel_y1+10], radius=28, fill=(0, 0, 0, 70))
     shadow = shadow.filter(ImageFilter.GaussianBlur(10))
     img = Image.alpha_composite(img, shadow)
 
-    # Painel Vidro (Layer 2)
+    # Painel
     panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     pd = ImageDraw.Draw(panel)
     pd.rounded_rectangle([painel_x0, painel_y0, painel_x1, painel_y1], radius=28, fill=PAINEL_FILL, outline=PAINEL_BORDA, width=2)
-    # Brilho plástico no topo
+    # Brilho
     pd.rounded_rectangle([painel_x0+2, painel_y0+2, painel_x1-2, painel_y0 + int(painel_h*0.22)], radius=26, fill=PAINEL_BRILHO)
 
-    # Junta tudo
     img = Image.alpha_composite(img, panel)
-    
-    # Cria novo desenhista para escrever SOBRE o painel
     draw = ImageDraw.Draw(img)
 
     # =========================================================
@@ -148,7 +166,6 @@ def criar_proposta(dados):
     inner_h = inner_y1 - inner_y0
     inner_w = inner_x1 - inner_x0
 
-    # Alturas fixas
     head_h   = 40
     line_h   = 18
     preco_h  = 78
@@ -156,11 +173,9 @@ def criar_proposta(dados):
     footer_h = 72
     gap2     = 12
 
-    # Altura dinâmica para lista
     lista_h = inner_h - (head_h + line_h + preco_h + gap1 + footer_h + gap2)
     row_h = max(42, int(lista_h / len(itens)))
 
-    # Grid
     label_w = 310
     col_w = (inner_w - label_w) / 4
     x_label = inner_x0 + 8
@@ -172,7 +187,6 @@ def criar_proposta(dados):
     for i, col in enumerate(colunas):
         draw.text((x_cols[i], y0 + 12), col, font=f_head_planos, fill=LARANJA, anchor="mm")
 
-    # Linha Preta
     y_line = y0 + head_h
     draw.line([(inner_x0, y_line), (inner_x1, y_line)], fill=PRETO, width=3)
 
@@ -186,7 +200,7 @@ def criar_proposta(dados):
     y_div = y_preco + preco_h
     draw.line([(inner_x0, y_div), (inner_x1, y_div)], fill=(210, 210, 210, 255), width=2)
 
-    # --- Funções de Desenho de Ícones ---
+    # Funções de desenho
     def draw_badge(x, y, kind):
         r = 14
         if kind == "check":
@@ -206,12 +220,11 @@ def criar_proposta(dados):
         draw.rounded_rectangle([px0, py0, px0+pw, py0+ph], radius=14, fill=(245,245,245,255), outline=(215,215,215,255), width=2)
         draw.text((x, y-1), txt, font=f_negrito, fill=PRETO, anchor="mm")
 
-    # Lista de Benefícios
+    # Lista
     y_list = y_div + gap1
     for nome, status_lista in itens:
         y_mid = y_list + (row_h // 2)
         draw.text((x_label, y_mid), nome, font=f_texto, fill=CINZA_TEXTO, anchor="lm")
-
         for i, st in enumerate(status_lista):
             cx = x_cols[i]
             if st == "✔": draw_badge(cx, y_mid, "check")
@@ -231,23 +244,30 @@ st.title("🛡️ Gerador Legacy Premium")
 
 c1, c2 = st.columns(2)
 cliente = c1.text_input("Nome do Cliente")
-consultor = c2.text_input("Nome do Consultor")
-modelo = st.text_input("Modelo do Veículo")
+modelo = c2.text_input("Modelo do Veículo")
 
-c3, c4, c5 = st.columns(3)
-ano = c3.text_input("Ano")
-fipe = c4.number_input("Valor FIPE", step=100.0)
-regiao = c5.selectbox("Região", ["Capital", "Serrana"])
-adesao = st.text_input("Valor da Adesão (R$)", value="300,00")
+c3, c4 = st.columns(2)
+consultor = c3.text_input("Nome do Consultor")
+telefone = c4.text_input("WhatsApp Consultor (ex: 21999998888)")
+
+c5, c6, c7, c8 = st.columns(4)
+ano = c5.text_input("Ano")
+fipe = c6.number_input("Valor FIPE", step=100.0)
+regiao = c7.selectbox("Região", ["Capital", "Serrana"])
+adesao = c8.text_input("Adesão (R$)", value="300,00")
 
 if st.button("GERAR COTAÇÃO", type="primary"):
     if fipe > 0 and cliente:
         with st.spinner("Gerando imagem em alta definição..."):
             precos = calcular_mensalidades(fipe, regiao)
             if precos:
+                # Formata telefone antes de enviar
+                tel_formatado = formatar_telefone(telefone)
+                
                 dados = {
                     "cliente": cliente, 
                     "consultor": consultor, 
+                    "telefone": tel_formatado,
                     "modelo": modelo, 
                     "ano": ano, 
                     "fipe": f"R$ {fipe:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), 
@@ -255,7 +275,7 @@ if st.button("GERAR COTAÇÃO", type="primary"):
                     "adesao": adesao
                 }
                 img = criar_proposta(dados)
-                st.image(img, caption="Layout Premium", width=400)
+                st.image(img, caption="Layout Premium com Telefone", width=400)
                 
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
