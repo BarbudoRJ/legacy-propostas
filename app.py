@@ -1,5 +1,31 @@
+import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import io
 
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="Gerador Legacy Premium", page_icon="💎", layout="centered")
+
+# --- LÓGICA DE CÁLCULO (Backend) ---
+def calcular_mensalidades(fipe, regiao):
+    # Tabela de preços (Exemplo)
+    tabela = {
+        10000: ([75.00, 86.60, 110.40, 151.50], [75.00, 80.60, 93.00, 140.69]),
+        20000: ([75.00, 110.60, 137.49, 170.49], [75.00, 108.10, 125.00, 167.00]),
+        30000: ([75.00, 126.80, 172.69, 202.50], [75.00, 123.60, 141.00, 202.00]),
+        40000: ([75.00, 148.50, 202.89, 238.50], [75.00, 146.40, 176.00, 232.00]),
+        50000: ([75.00, 180.69, 243.60, 277.60], [75.00, 178.80, 213.00, 273.00]),
+        60000: ([75.00, 220.49, 270.59, 332.49], [75.00, 219.90, 240.00, 301.00]),
+        70000: ([75.00, 248.79, 322.79, 370.50], [75.00, 246.90, 277.00, 337.00]),
+        80000: ([75.00, 290.69, 372.60, 418.60], [75.00, 288.90, 313.00, 373.00]),
+        90000: ([75.00, 330.49, 422.79, 475.70], [75.00, 329.90, 348.00, 410.00]),
+        100000:([75.00, 370.59, 487.59, 535.69], [75.00, 389.60, 465.00, 520.00]),
+    }
+    idx = 0 if regiao == "Capital" else 1
+    for teto, precos in tabela.items():
+        if fipe <= teto: return [f"R$ {v:.2f}".replace('.', ',') for v in precos[idx]]
+    return None
+
+# --- MOTOR GRÁFICO (Seu código otimizado) ---
 def criar_proposta(dados):
     W, H = 1080, 1350
 
@@ -19,14 +45,13 @@ def criar_proposta(dados):
     PRETO       = (15, 15, 15, 255)
     CINZA_TEXTO = (90, 90, 90, 255)
 
-    # Esquelmorfo
-    PAINEL_FILL   = (255, 255, 255, 210)   # translúcido
+    # Esquelmorfo (Glassmorphism)
+    PAINEL_FILL   = (255, 255, 255, 210)   # Branco translúcido
     PAINEL_BORDA  = (220, 220, 220, 255)
     PAINEL_BRILHO = (255, 255, 255, 120)
 
     VERDE_BADGE = (40, 170, 90, 255)
     VERM_BADGE  = (220, 60, 60, 255)
-    CINZA_BADGE = (40, 40, 40, 255)
 
     # --- FONTES ---
     try:
@@ -37,16 +62,16 @@ def criar_proposta(dados):
         f_head_planos = ImageFont.truetype("bold.ttf", 26)
         f_preco_num   = ImageFont.truetype("bold.ttf", 34)
         f_preco_rs    = ImageFont.truetype("regular.ttf", 22)
-        f_small       = ImageFont.truetype("regular.ttf", 22)
         f_footer      = ImageFont.truetype("bold.ttf", 22)
+        f_small       = ImageFont.truetype("regular.ttf", 22)
     except:
-        f_titulo = f_subtitulo = f_texto = f_negrito = f_head_planos = f_preco_num = f_preco_rs = f_small = f_footer = ImageFont.load_default()
+        f_titulo = f_subtitulo = f_texto = f_negrito = f_head_planos = f_preco_num = f_preco_rs = f_footer = f_small = ImageFont.load_default()
 
     MARGEM_X = 70
     CENTRO_X = W // 2
 
     # =========================================================
-    # 1) TOPO FIXO (não precisa mexer muito)
+    # 1) TOPO FIXO
     # =========================================================
     y = 175
     base_draw.text((MARGEM_X, y), "Proposta para:", font=f_texto, fill=CINZA_TEXTO)
@@ -62,11 +87,10 @@ def criar_proposta(dados):
     base_draw.text((CENTRO_X, y), dados["modelo"], font=f_subtitulo, fill=PRETO, anchor="ma")
     y += 46
 
-    base_draw.text((CENTRO_X, y), f"Ano: {dados['ano']}  |  FIPE: {dados['fipe']}",
-                   font=f_titulo, fill=AZUL_LEGACY, anchor="ma")
+    base_draw.text((CENTRO_X, y), f"Ano: {dados['ano']}  |  FIPE: {dados['fipe']}", font=f_titulo, fill=AZUL_LEGACY, anchor="ma")
     y += 70
 
-    # badge adesão
+    # Badge adesão
     badge_w, badge_h = 520, 64
     bx0 = CENTRO_X - badge_w // 2
     by0 = y
@@ -74,36 +98,35 @@ def criar_proposta(dados):
     base_draw.text((CENTRO_X, by0 + 20), f"Adesão: R$ {dados['adesao']}", font=f_subtitulo, fill=PRETO, anchor="ma")
 
     # =========================================================
-    # 2) PAINEL ESQUELMORFO (cobre veículos se precisar)
+    # 2) PAINEL ESQUELMORFO (CAMADAS)
     # =========================================================
-    # Você liberou usar a área dos veículos. Então o painel começa alto o suficiente pra caber tudo.
     painel_x0, painel_x1 = 55, W - 55
-    painel_y0, painel_y1 = 650, H - 40  # COMEÇA MAIS CEDO PRA CABER A LISTA INTEIRA
+    painel_y0, painel_y1 = 650, H - 40 
     painel_w = painel_x1 - painel_x0
     painel_h = painel_y1 - painel_y0
 
-    # sombra (layer separado)
+    # Sombra (Layer 1)
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow)
-    sd.rounded_rectangle([painel_x0+6, painel_y0+10, painel_x1+6, painel_y1+10],
-                         radius=28, fill=(0, 0, 0, 70))
+    sd.rounded_rectangle([painel_x0+6, painel_y0+10, painel_x1+6, painel_y1+10], radius=28, fill=(0, 0, 0, 70))
     shadow = shadow.filter(ImageFilter.GaussianBlur(10))
     img = Image.alpha_composite(img, shadow)
 
-    # painel
+    # Painel Vidro (Layer 2)
     panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     pd = ImageDraw.Draw(panel)
-    pd.rounded_rectangle([painel_x0, painel_y0, painel_x1, painel_y1], radius=28,
-                         fill=PAINEL_FILL, outline=PAINEL_BORDA, width=2)
-    # brilho no topo (efeito “plástico”)
-    pd.rounded_rectangle([painel_x0+2, painel_y0+2, painel_x1-2, painel_y0 + int(painel_h*0.22)],
-                         radius=26, fill=PAINEL_BRILHO)
+    pd.rounded_rectangle([painel_x0, painel_y0, painel_x1, painel_y1], radius=28, fill=PAINEL_FILL, outline=PAINEL_BORDA, width=2)
+    # Brilho plástico no topo
+    pd.rounded_rectangle([painel_x0+2, painel_y0+2, painel_x1-2, painel_y0 + int(painel_h*0.22)], radius=26, fill=PAINEL_BRILHO)
 
+    # Junta tudo
     img = Image.alpha_composite(img, panel)
+    
+    # Cria novo desenhista para escrever SOBRE o painel
     draw = ImageDraw.Draw(img)
 
     # =========================================================
-    # 3) GRID DE PLANOS + BENEFÍCIOS COM ALTURA DINÂMICA
+    # 3) GRID DE PLANOS + BENEFÍCIOS
     # =========================================================
     itens = [
         ("Rastreamento", ["✔", "✔", "✔", "✔"]),
@@ -116,61 +139,58 @@ def criar_proposta(dados):
         ("Gás (GNV)",    ["✖", "✖", "✖", "✔"]),
     ]
 
-    # Área interna do painel
+    # Área interna
     pad = 28
     inner_x0 = painel_x0 + pad
     inner_x1 = painel_x1 - pad
     inner_y0 = painel_y0 + 20
     inner_y1 = painel_y1 - 18
-    inner_w = inner_x1 - inner_x0
     inner_h = inner_y1 - inner_y0
+    inner_w = inner_x1 - inner_x0
 
-    # Reserva de alturas fixas (títulos + preços + divisores + rodapé)
-    head_h   = 40     # títulos Econ/Básico/Plus/Prem
-    line_h   = 18     # linha
-    preco_h  = 78     # R$ + número
+    # Alturas fixas
+    head_h   = 40
+    line_h   = 18
+    preco_h  = 78
     gap1     = 18
-    footer_h = 72     # promo + legal (2 linhas)
+    footer_h = 72
     gap2     = 12
 
-    # Espaço restante para lista de itens
+    # Altura dinâmica para lista
     lista_h = inner_h - (head_h + line_h + preco_h + gap1 + footer_h + gap2)
-    # row height calculado (garante caber tudo)
-    row_h = max(42, int(lista_h / len(itens)))  # mínimo 42 pra não ficar miúdo
+    row_h = max(42, int(lista_h / len(itens)))
 
-    # Colunas: 1 label + 4 planos
+    # Grid
     label_w = 310
     col_w = (inner_w - label_w) / 4
     x_label = inner_x0 + 8
     x_cols = [inner_x0 + label_w + (i * col_w) + (col_w / 2) for i in range(4)]
 
-    # --- Cabeçalho colunas ---
+    # Cabeçalho Colunas
     y0 = inner_y0
     colunas = ["Econ.", "Básico", "Plus", "Prem."]
     for i, col in enumerate(colunas):
         draw.text((x_cols[i], y0 + 12), col, font=f_head_planos, fill=LARANJA, anchor="mm")
 
-    # Linha preta
+    # Linha Preta
     y_line = y0 + head_h
     draw.line([(inner_x0, y_line), (inner_x1, y_line)], fill=PRETO, width=3)
 
-    # --- Preços ---
+    # Preços
     y_preco = y_line + 18
     for i, p in enumerate(dados["precos"]):
         valor = p.replace("R$ ", "")
         draw.text((x_cols[i], y_preco + 10), "R$", font=f_preco_rs, fill=PRETO, anchor="mm")
         draw.text((x_cols[i], y_preco + 44), valor, font=f_preco_num, fill=PRETO, anchor="mm")
 
-    # divisor sutil abaixo dos preços
     y_div = y_preco + preco_h
     draw.line([(inner_x0, y_div), (inner_x1, y_div)], fill=(210, 210, 210, 255), width=2)
 
-    # --- Ícones bonitos (badge circular) ---
+    # --- Funções de Desenho de Ícones ---
     def draw_badge(x, y, kind):
         r = 14
         if kind == "check":
             draw.ellipse([x-r, y-r, x+r, y+r], fill=VERDE_BADGE)
-            # check branco “desenhado”
             draw.line([(x-6, y+1), (x-1, y+6)], fill=(255,255,255,255), width=3)
             draw.line([(x-1, y+6), (x+8, y-5)], fill=(255,255,255,255), width=3)
         elif kind == "x":
@@ -179,7 +199,6 @@ def criar_proposta(dados):
             draw.line([(x+6, y-6), (x-6, y+6)], fill=(255,255,255,255), width=3)
 
     def draw_pill(x, y, txt):
-        # pill para "200", "10d", "1mil"
         tw, th = draw.textbbox((0,0), txt, font=f_negrito)[2:]
         pw = max(54, tw + 26)
         ph = 32
@@ -187,29 +206,59 @@ def criar_proposta(dados):
         draw.rounded_rectangle([px0, py0, px0+pw, py0+ph], radius=14, fill=(245,245,245,255), outline=(215,215,215,255), width=2)
         draw.text((x, y-1), txt, font=f_negrito, fill=PRETO, anchor="mm")
 
-    # --- Lista de benefícios ---
+    # Lista de Benefícios
     y_list = y_div + gap1
     for nome, status_lista in itens:
         y_mid = y_list + (row_h // 2)
-
         draw.text((x_label, y_mid), nome, font=f_texto, fill=CINZA_TEXTO, anchor="lm")
 
         for i, st in enumerate(status_lista):
             cx = x_cols[i]
-            if st == "✔":
-                draw_badge(cx, y_mid, "check")
-            elif st == "✖":
-                draw_badge(cx, y_mid, "x")
-            else:
-                draw_pill(cx, y_mid, st)
-
+            if st == "✔": draw_badge(cx, y_mid, "check")
+            elif st == "✖": draw_badge(cx, y_mid, "x")
+            else: draw_pill(cx, y_mid, st)
         y_list += row_h
 
-    # --- Rodapé dentro do painel (sempre visível) ---
+    # Rodapé
     y_footer = inner_y1 - footer_h + 10
-    draw.text((CENTRO_X, y_footer + 10), "⚠ PAGAMENTO ANTECIPADO GERA DESCONTO ⚠",
-              font=f_footer, fill=LARANJA, anchor="mm")
-    draw.text((CENTRO_X, y_footer + 42), "A COTAÇÃO PODE SOFRER ALTERAÇÕES BASEADAS NOS VALORES VIGENTES",
-              font=f_small, fill=AZUL_LEGACY, anchor="mm")
+    draw.text((CENTRO_X, y_footer + 10), "⚠ PAGAMENTO ANTECIPADO GERA DESCONTO ⚠", font=f_footer, fill=LARANJA, anchor="mm")
+    draw.text((CENTRO_X, y_footer + 42), "A COTAÇÃO PODE SOFRER ALTERAÇÕES BASEADAS NOS VALORES VIGENTES", font=f_small, fill=AZUL_LEGACY, anchor="mm")
 
     return img.convert("RGB")
+
+# --- INTERFACE ---
+st.title("🛡️ Gerador Legacy Premium")
+
+c1, c2 = st.columns(2)
+cliente = c1.text_input("Nome do Cliente")
+consultor = c2.text_input("Nome do Consultor")
+modelo = st.text_input("Modelo do Veículo")
+
+c3, c4, c5 = st.columns(3)
+ano = c3.text_input("Ano")
+fipe = c4.number_input("Valor FIPE", step=100.0)
+regiao = c5.selectbox("Região", ["Capital", "Serrana"])
+adesao = st.text_input("Valor da Adesão (R$)", value="300,00")
+
+if st.button("GERAR COTAÇÃO", type="primary"):
+    if fipe > 0 and cliente:
+        with st.spinner("Gerando imagem em alta definição..."):
+            precos = calcular_mensalidades(fipe, regiao)
+            if precos:
+                dados = {
+                    "cliente": cliente, 
+                    "consultor": consultor, 
+                    "modelo": modelo, 
+                    "ano": ano, 
+                    "fipe": f"R$ {fipe:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), 
+                    "precos": precos, 
+                    "adesao": adesao
+                }
+                img = criar_proposta(dados)
+                st.image(img, caption="Layout Premium", width=400)
+                
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                st.download_button("📥 BAIXAR IMAGEM", buf.getvalue(), f"Cotacao_{cliente}.png", "image/png")
+    else:
+        st.warning("Preencha FIPE e Nome do Cliente.")
