@@ -1,29 +1,23 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
+from datetime import datetime # Importando biblioteca de data
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gerador Legacy Premium", page_icon="💎", layout="centered")
 
-# --- FORMATADOR DE TELEFONE (Padrão BR) ---
+# --- FORMATADOR DE TELEFONE ---
 def formatar_telefone(tel):
     if not tel: return ""
-    # Remove tudo que não é número
     nums = "".join(filter(str.isdigit, tel))
-    
-    # Formata (XX) XXXXX-XXXX
     if len(nums) == 11:
         return f"({nums[:2]}) {nums[2:7]}-{nums[7:]}"
-    # Formata (XX) XXXX-XXXX
     elif len(nums) == 10:
         return f"({nums[:2]}) {nums[2:6]}-{nums[6:]}"
-    
-    # Se não for número padrão, retorna o que foi digitado
     return tel
 
-# --- LÓGICA DE CÁLCULO (Backend) ---
+# --- LÓGICA DE CÁLCULO ---
 def calcular_mensalidades(fipe, regiao):
-    # Tabela de preços
     tabela = {
         10000: ([75.00, 86.60, 110.40, 151.50], [75.00, 80.60, 93.00, 140.69]),
         20000: ([75.00, 110.60, 137.49, 170.49], [75.00, 108.10, 125.00, 167.00]),
@@ -60,8 +54,9 @@ def criar_proposta(dados):
     AZUL_LEGACY = (0, 35, 95, 255)
     PRETO       = (15, 15, 15, 255)
     CINZA_TEXTO = (90, 90, 90, 255)
+    BRANCO      = (255, 255, 255, 255)
 
-    # Esquelmorfo (Glassmorphism)
+    # Esquelmorfo
     PAINEL_FILL   = (255, 255, 255, 210)
     PAINEL_BORDA  = (220, 220, 220, 255)
     PAINEL_BRILHO = (255, 255, 255, 120)
@@ -90,11 +85,20 @@ def criar_proposta(dados):
     # 1) TOPO FIXO
     # =========================================================
     y = 175
+    
+    # Lado Esquerdo: "Proposta para"
     base_draw.text((MARGEM_X, y), "Proposta para:", font=f_texto, fill=CINZA_TEXTO)
+    
+    # Lado Direito: DATA AUTOMÁTICA
+    data_hoje = datetime.now().strftime("%d/%m/%Y")
+    # Alinhado à direita (W - Margem)
+    base_draw.text((W - MARGEM_X, y), f"Data: {data_hoje}", font=f_texto, fill=CINZA_TEXTO, anchor="ra")
+    
+    # Nome do Cliente
     base_draw.text((MARGEM_X + 215, y), dados["cliente"], font=f_negrito, fill=AZUL_LEGACY)
     y += 42
 
-    # --- CONSULTOR + TELEFONE (ATUALIZADO) ---
+    # Consultor + Telefone
     texto_consultor = f"Consultor(a): {dados['consultor']}"
     if dados['telefone']:
         texto_consultor += f"   •   {dados['telefone']}"
@@ -137,7 +141,6 @@ def criar_proposta(dados):
     panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     pd = ImageDraw.Draw(panel)
     pd.rounded_rectangle([painel_x0, painel_y0, painel_x1, painel_y1], radius=28, fill=PAINEL_FILL, outline=PAINEL_BORDA, width=2)
-    # Brilho
     pd.rounded_rectangle([painel_x0+2, painel_y0+2, painel_x1-2, painel_y0 + int(painel_h*0.22)], radius=26, fill=PAINEL_BRILHO)
 
     img = Image.alpha_composite(img, panel)
@@ -157,7 +160,6 @@ def criar_proposta(dados):
         ("Gás (GNV)",    ["✖", "✖", "✖", "✔"]),
     ]
 
-    # Área interna
     pad = 28
     inner_x0 = painel_x0 + pad
     inner_x1 = painel_x1 - pad
@@ -181,13 +183,20 @@ def criar_proposta(dados):
     x_label = inner_x0 + 8
     x_cols = [inner_x0 + label_w + (i * col_w) + (col_w / 2) for i in range(4)]
 
-    # Cabeçalho Colunas
+    # --- CABEÇALHO COLUNAS (FUNDO LARANJA + TEXTO BRANCO) ---
     y0 = inner_y0
     colunas = ["Econ.", "Básico", "Plus", "Prem."]
-    for i, col in enumerate(colunas):
-        draw.text((x_cols[i], y0 + 12), col, font=f_head_planos, fill=LARANJA, anchor="mm")
+    
+    # Tarja Laranja atrás dos títulos para o branco aparecer
+    # Desenhamos uma barra arredondada só no topo
+    draw.rounded_rectangle([inner_x0, y0, inner_x1, y0 + head_h + 5], radius=8, fill=LARANJA)
 
-    y_line = y0 + head_h
+    for i, col in enumerate(colunas):
+        # Texto BRANCO sobre a tarja Laranja
+        draw.text((x_cols[i], y0 + 12), col, font=f_head_planos, fill=BRANCO, anchor="mm")
+
+    # Linha Preta (Abaixo da tarja)
+    y_line = y0 + head_h + 5
     draw.line([(inner_x0, y_line), (inner_x1, y_line)], fill=PRETO, width=3)
 
     # Preços
@@ -200,7 +209,7 @@ def criar_proposta(dados):
     y_div = y_preco + preco_h
     draw.line([(inner_x0, y_div), (inner_x1, y_div)], fill=(210, 210, 210, 255), width=2)
 
-    # Funções de desenho
+    # Funções de Desenho
     def draw_badge(x, y, kind):
         r = 14
         if kind == "check":
@@ -261,7 +270,7 @@ if st.button("GERAR COTAÇÃO", type="primary"):
         with st.spinner("Gerando imagem em alta definição..."):
             precos = calcular_mensalidades(fipe, regiao)
             if precos:
-                # Formata telefone antes de enviar
+                # Formata telefone
                 tel_formatado = formatar_telefone(telefone)
                 
                 dados = {
@@ -275,7 +284,7 @@ if st.button("GERAR COTAÇÃO", type="primary"):
                     "adesao": adesao
                 }
                 img = criar_proposta(dados)
-                st.image(img, caption="Layout Premium com Telefone", width=400)
+                st.image(img, caption="Layout Premium", width=400)
                 
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
