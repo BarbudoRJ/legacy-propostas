@@ -8,7 +8,7 @@ st.set_page_config(page_title="Gerador Legacy Story", page_icon="📱", layout="
 # --- FUNÇÃO PARA ÍCONES (Bolinhas Vívidas) ---
 def desenhar_icone(draw_obj, x, y, status, font_icon, verde, vermelho, branco, cinza, font_bold):
     if status == "✔":
-        raio = 28 # Levemente menor para caber melhor
+        raio = 28
         draw_obj.ellipse([(x-raio, y-raio), (x+raio, y+raio)], fill=verde)
         draw_obj.text((x, y), "✔", font=font_icon, fill=branco, anchor="mm")
     elif status == "✖":
@@ -22,75 +22,72 @@ def desenhar_icone(draw_obj, x, y, status, font_icon, verde, vermelho, branco, c
 def criar_proposta(dados):
     W, H = 1080, 1920
     
-    # 1. CARREGAR SEU FUNDO PERSONALIZADO
+    # 1. CARREGAR SEU FUNDO PERSONALIZADO (fundo.jpg)
     try:
         bg = Image.open("fundo.jpg").convert("RGBA")
         img = bg.resize((W, H), Image.LANCZOS)
     except:
-        # Se não tiver fundo, usa branco (para não dar erro)
+        # Fundo branco de emergência se não achar o arquivo
         img = Image.new('RGBA', (W, H), color=(255, 255, 255, 255))
 
     draw = ImageDraw.Draw(img)
 
-    # --- CORES (Preto Absoluto para leitura máxima) ---
+    # --- PALETA DE CORES LEGACY ---
     LARANJA = (243, 112, 33, 255)
     PRETO = (0, 0, 0, 255)
     BRANCO = (255, 255, 255, 255)
     VERDE_VIVO = (0, 200, 0, 255)
     VERMELHO_VIVO = (220, 0, 0, 255)
     CINZA_ESCURO = (40, 40, 40, 255)
+    # Novo Azul Profundo para o rodapé
+    AZUL_LEGACY = (0, 35, 95, 255) 
 
     # --- FONTES LOCAIS ---
     try:
-        # Carrega as fontes que você subiu
         f_h1 = ImageFont.truetype("bold.ttf", 70)
         f_h2 = ImageFont.truetype("bold.ttf", 45)
         f_body = ImageFont.truetype("regular.ttf", 35)
         f_bold = ImageFont.truetype("bold.ttf", 35)
         f_check = ImageFont.truetype("regular.ttf", 45)
+        # Fonte um pouco menor para o aviso legal
+        f_aviso = ImageFont.truetype("regular.ttf", 28)
     except:
-        f_h1 = f_h2 = f_body = f_bold = f_check = ImageFont.load_default()
+        f_h1 = f_h2 = f_body = f_bold = f_check = f_aviso = ImageFont.load_default()
 
     # ==============================================================================
-    # CONFIGURAÇÃO DA "DIAGRAMAÇÃO" (Margens)
+    # DIAGRAMAÇÃO (MARGENS)
     # ==============================================================================
-    MARGEM_TOPO = 420   # Pula os 420px de cima (onde fica seu Logo no fundo)
-    MARGEM_LADO = 60    # Espaço em branco nas laterais esquerda/direita
+    # Ajuste este valor se o texto ficar em cima do seu logo no fundo.jpg
+    MARGEM_TOPO = 450   
+    MARGEM_LADO = 60
     # ==============================================================================
 
-    # Onde começa a escrever (Cursor Y)
     y = MARGEM_TOPO
 
     # --- DADOS DO CLIENTE ---
-    # Escreve alinhado à esquerda, respeitando a margem lateral
     draw.text((MARGEM_LADO, y), f"Cliente: {dados['cliente']}", font=f_h2, fill=PRETO)
-    
-    # Consultor na mesma linha ou abaixo? Vamos colocar abaixo mais perto
     y += 60 
     draw.text((MARGEM_LADO, y), f"Consultor: {dados['consultor']}", font=f_bold, fill=LARANJA)
     
-    y += 100
-    # --- BLOCO DO CARRO (Centralizado) ---
+    y += 110
+    # --- BLOCO DO CARRO ---
     draw.text((W//2, y), f"{dados['modelo']}", font=f_h2, fill=PRETO, anchor="ma", align="center")
     draw.text((W//2, y+60), f"Ano: {dados['ano']} | FIPE: {dados['fipe']}", font=f_h1, fill=LARANJA, anchor="ma")
 
     # --- TABELA DE PREÇOS ---
-    y += 180
+    y += 190
     
     # Destaque Adesão
     draw.text((W//2, y), f"Taxa de Adesão: R$ {dados['adesao']}", font=f_h2, fill=PRETO, anchor="ma")
     
     y += 80
     
-    # Configuração das Colunas da Tabela
-    # A largura útil é a largura total menos as duas margens laterais
     largura_util = W - (MARGEM_LADO * 2)
     largura_coluna = largura_util // 4
     colunas = ["Econ.", "Básico", "Plus", "Prem."]
     
-    # Títulos das Colunas
+    # Cabeçalho Tabela
     for i, col in enumerate(colunas):
-        # O X é calculado a partir da MARGEM_LADO
         x = MARGEM_LADO + (i * largura_coluna) + (largura_coluna // 2)
         draw.text((x, y), col, font=f_bold, fill=LARANJA, anchor="ma")
     
@@ -98,7 +95,7 @@ def criar_proposta(dados):
     # Linha divisória
     draw.line([(MARGEM_LADO, y), (W - MARGEM_LADO, y)], fill=PRETO, width=4)
     
-    y += 20
+    y += 25
     # Valores Mensais
     for i, preco in enumerate(dados['precos']):
         x = MARGEM_LADO + (i * largura_coluna) + (largura_coluna // 2)
@@ -106,7 +103,7 @@ def criar_proposta(dados):
         draw.text((x, y), f"R$\n{val}", font=f_h2, fill=PRETO, anchor="ma", align="center")
 
     # --- BENEFÍCIOS (GRID) ---
-    y += 150 # Espaço entre preços e benefícios
+    y += 160
     
     itens = [
         ("Rastreamento", ["✔", "✔", "✔", "✔"]),
@@ -120,17 +117,17 @@ def criar_proposta(dados):
     ]
 
     for nome, status_lista in itens:
-        # Nome do benefício
         draw.text((MARGEM_LADO, y+10), nome, font=f_body, fill=PRETO)
-        
-        # Ícones
         for i, status in enumerate(status_lista):
             x = MARGEM_LADO + (i * largura_coluna) + (largura_coluna // 2)
             desenhar_icone(draw, x, y+25, status, f_check, VERDE_VIVO, VERMELHO_VIVO, BRANCO, CINZA_ESCURO, f_bold)
-        
-        y += 85 # Espaço entre linhas de benefícios
+        y += 88
 
-    # NÃO DESENHAMOS RODAPÉ (Pois já está no seu fundo.jpg)
+    # --- AVISO LEGAL (RODAPÉ) ---
+    y += 50 # Espaço extra após a tabela
+    aviso = "A COTAÇÃO PODE SOFRER ALTERAÇÕES BASEADAS NOS VALORES VIGENTES"
+    # Usando o Azul Legacy Escuro
+    draw.multiline_text((W//2, y), aviso, font=f_aviso, fill=AZUL_LEGACY, anchor="ma", align="center")
 
     return img.convert("RGB")
 
