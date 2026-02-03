@@ -7,7 +7,7 @@ import urllib.parse
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gerador Legacy Premium", page_icon="💎", layout="centered")
 
-# --- ESTILOS CSS PERSONALIZADOS (Botão Verde) ---
+# --- ESTILOS CSS (Botão Verde) ---
 st.markdown("""
 <style>
     .stButton>button {
@@ -36,7 +36,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- FORMATADOR DE TELEFONE ---
+# --- FORMATADOR DE TELEFONE (Para exibir na imagem) ---
 def formatar_telefone(tel):
     if not tel: return ""
     nums = "".join(filter(str.isdigit, tel))
@@ -46,8 +46,8 @@ def formatar_telefone(tel):
         return f"({nums[:2]}) {nums[2:6]}-{nums[6:]}"
     return tel
 
-# --- FUNÇÃO PARA MENSAGEM WHATSAPP ---
-def gerar_link_whatsapp(dados, telefone_cliente):
+# --- FUNÇÃO DO LINK DO WHATSAPP (MODO SELEÇÃO DE CONTATO) ---
+def gerar_link_whatsapp(dados):
     # Texto da mensagem
     msg = f"""Olá, *{dados['cliente']}*! 👋
 Aqui está sua cotação personalizada *Legacy*:
@@ -69,15 +69,9 @@ Estou à disposição para fecharmos! 🤝"""
     
     msg_encoded = urllib.parse.quote(msg)
     
-    # Se tiver telefone do cliente, manda direto. Se não, abre pra escolher.
-    if telefone_cliente:
-        # Limpa telefone cliente para apenas números
-        tel_limpo = "".join(filter(str.isdigit, telefone_cliente))
-        if not tel_limpo.startswith("55") and len(tel_limpo) >= 10:
-            tel_limpo = "55" + tel_limpo # Adiciona DDI Brasil se faltar
-        return f"https://wa.me/{tel_limpo}?text={msg_encoded}"
-    else:
-        return f"https://wa.me/?text={msg_encoded}"
+    # FORÇA A ABERTURA DA LISTA DE CONTATOS (api.whatsapp.com/send)
+    # Isso garante que o usuário escolha para quem enviar
+    return f"https://api.whatsapp.com/send?text={msg_encoded}"
 
 # --- LÓGICA DE CÁLCULO ---
 def calcular_mensalidades(fipe, regiao):
@@ -136,7 +130,7 @@ def criar_proposta(dados):
         f_preco_rs    = ImageFont.truetype("regular.ttf", 22)
         f_footer      = ImageFont.truetype("bold.ttf", 22)
         f_small       = ImageFont.truetype("regular.ttf", 20)
-        f_moto        = ImageFont.truetype("bold.ttf", 24) # Fonte nova para Moto
+        f_moto        = ImageFont.truetype("bold.ttf", 24)
     except:
         f_titulo = f_subtitulo = f_texto = f_negrito = f_head_planos = f_preco_num = f_preco_rs = f_footer = f_small = f_moto = ImageFont.load_default()
 
@@ -219,7 +213,6 @@ def criar_proposta(dados):
     line_h   = 18
     preco_h  = 78
     gap1     = 18
-    # Ajustei a altura do rodapé para caber a nova frase da Moto
     footer_h = 110 
     gap2     = 12
 
@@ -281,23 +274,22 @@ def criar_proposta(dados):
             else: draw_pill(cx, y_mid, st)
         y_list += row_h
 
-    # --- RODAPÉ ATUALIZADO ---
+    # --- RODAPÉ ---
     y_footer_base = inner_y1 - 10
     
-    # Frase Legal (Última linha)
+    # Frase Legal
     draw.text((CENTRO_X, y_footer_base), "A COTAÇÃO PODE SOFRER ALTERAÇÕES BASEADAS NOS VALORES VIGENTES", font=f_small, fill=AZUL_LEGACY, anchor="ms")
     
-    # Frase Moto Elétrica (Destaque logo acima)
+    # Moto Elétrica
     y_moto = y_footer_base - 35
     draw.rounded_rectangle([CENTRO_X - 420, y_moto - 32, CENTRO_X + 420, y_moto + 8], radius=10, fill=(240, 240, 250, 255), outline=AZUL_LEGACY, width=1)
     draw.text((CENTRO_X, y_moto - 12), "⚡ CONHEÇA OS NOSSOS PLANOS PARA PROTEÇÃO DE MOTOS ELÉTRICAS ⚡", font=f_moto, fill=AZUL_LEGACY, anchor="mm")
 
-    # Frase Promoção (Acima da Moto)
+    # Promoção
     y_promo = y_moto - 50
     draw.text((CENTRO_X, y_promo), "⚠ PAGAMENTO ANTECIPADO GERA DESCONTO ⚠", font=f_footer, fill=LARANJA, anchor="ms")
 
     return img.convert("RGB")
-
 
 # --- INICIALIZAÇÃO DE ESTADO ---
 if 'generated' not in st.session_state:
@@ -312,7 +304,7 @@ st.title("🛡️ Gerador Legacy Premium")
 
 c1, c2 = st.columns(2)
 cliente = c1.text_input("Nome do Cliente")
-telefone_cliente = c2.text_input("WhatsApp Cliente (Opcional)")
+# Removi o input de "WhatsApp do Cliente" aqui, pois o link agora é genérico
 
 c3, c4 = st.columns(2)
 modelo = c3.text_input("Modelo do Veículo")
@@ -333,7 +325,6 @@ if st.button("GERAR COTAÇÃO", type="primary"):
         with st.spinner("Gerando..."):
             precos = calcular_mensalidades(fipe, regiao)
             if precos:
-                # Salva dados no estado
                 st.session_state.dados_cotacao = {
                     "cliente": cliente, 
                     "consultor": consultor, 
@@ -344,10 +335,8 @@ if st.button("GERAR COTAÇÃO", type="primary"):
                     "precos": precos, 
                     "adesao": adesao
                 }
-                # Gera Imagem
                 img = criar_proposta(st.session_state.dados_cotacao)
                 
-                # Salva imagem em buffer
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
                 st.session_state.image_data = buf.getvalue()
@@ -355,7 +344,7 @@ if st.button("GERAR COTAÇÃO", type="primary"):
             else:
                 st.error("Valor FIPE fora da tabela.")
 
-# Exibição do Resultado (Fora do bloco do botão para persistir)
+# Exibição do Resultado
 if st.session_state.generated:
     st.markdown("---")
     st.success("✅ Cotação Gerada com Sucesso!")
@@ -373,16 +362,15 @@ if st.session_state.generated:
         )
 
     with col_actions:
-        st.info("Passo 1: Baixe a imagem ao lado.\nPasso 2: Clique abaixo para abrir o WhatsApp.")
+        st.info("Passo 1: Baixe a imagem ao lado.\nPasso 2: Clique abaixo e selecione o contato.")
         
-        # Gera Link WhatsApp
-        link_zap = gerar_link_whatsapp(st.session_state.dados_cotacao, telefone_cliente)
+        # Gera Link WhatsApp (Genérico - abre lista de contatos)
+        link_zap = gerar_link_whatsapp(st.session_state.dados_cotacao)
         
-        # Botão Verde HTML
         st.markdown(f"""
         <a href="{link_zap}" target="_blank">
             <button class="whatsapp-btn">
-                📱 ENVIAR COTAÇÃO (Abrir WhatsApp)
+                📱 ENVIAR COTAÇÃO (Selecionar Contato)
             </button>
         </a>
         """, unsafe_allow_html=True)
