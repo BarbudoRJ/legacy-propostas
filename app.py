@@ -1,325 +1,346 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 import io
-import datetime
-import urllib.parse
+import math
+from datetime import datetime
+
+st.set_page_config(page_title="Gerador Cotação Legacy", page_icon="📝", layout="centered")
 
 # =========================
-# 1. CONFIGURAÇÕES GERAIS
+# CONFIG VISUAL (AJUSTE AQUI)
 # =========================
-st.set_page_config(page_title="Gerador Legacy Oficial", page_icon="🛡️", layout="centered")
-
-# Definições de Tamanho e Arquivos
 W, H = 1080, 1350
-BG_PATH = "fundo.png"      # Deve conter logos, rótulos e textos institucionais
-FONT_BOLD = "bold.ttf"     # Fonte para valores e títulos
-FONT_REG = "regular.ttf"   # Fonte para itens da lista
 
-# =========================
-# 2. MAPA DE COORDENADAS (CALIBRAGEM)
-# =========================
-# Ajuste o 'x' e 'y' para cair exatamente ao lado dos rótulos do seu BG.
-POS = {
-    # Cabeçalho (Preenchimento de campos)
-    "proposta":   {"x": 290, "y": 170, "max_w": 400}, # Ao lado de "PROPOSTA PARA:"
-    "data":       {"x": 290, "y": 210, "max_w": 220}, # Ao lado de "DATA:"
-    
-    "adesao":     {"x": 780, "y": 170, "max_w": 180}, # Ao lado de "ADESÃO R$:"
-    "consultor":  {"x": 780, "y": 210, "max_w": 250}, # Ao lado de "CONSULTOR:"
-    
-    "placa":      {"x": 380, "y": 285, "max_w": 580}, # Ao lado de "PLACA:"
-    "modelo_ano": {"x": 380, "y": 325, "max_w": 580}, # Ao lado de "VEÍCULO:"
+# Área-alvo da TABELA (onde ela pode existir sem invadir BG/veículos)
+# Ajuste fino aqui se precisar (DEBUG mostra o retângulo)
+TABLE_BOX = (70, 520, 1010, 980)  # (x1, y1, x2, y2)
+
+# Área-alvo dos campos do TOPO (preencher apenas os valores, não os rótulos)
+# Esses pontos assumem que o BG tem rótulos fixos e espaço ao lado/dentro.
+FIELDS = {
+    "proposta_para":  (260, 275),  # valor ao lado de "PROPOSTA PARA:"
+    "data":           (260, 305),  # valor ao lado de "DATA:"
+    "adesao":         (720, 275),  # valor ao lado de "ADESÃO: R$"
+    "consultor":      (720, 305),  # valor ao lado de "CONSULTOR:"
+    "placa":          (190, 410),  # valor ao lado de "PLACA:"
+    "modelo_ano":     (310, 470),  # valor ao lado de "MODELO/ANO:"
 }
 
-# Área onde a Tabela será desenhada (x0, y0, x1, y1)
-# Deve ocupar o espaço em branco entre os dados do carro e o rodapé fixo
-TABLE_RECT = (60, 420, 1020, 950) 
-
 # =========================
-# 3. FUNÇÕES GRÁFICAS (MOTOR DE DESENHO)
+# FONTES
 # =========================
-
 def load_fonts():
-    """Carrega as fontes ou usa padrão se falhar"""
     try:
-        return {
-            "val": ImageFont.truetype(FONT_BOLD, 34),       # Valores preenchidos
-            "val_sm": ImageFont.truetype(FONT_BOLD, 28),    # Valores secundários
-            "head": ImageFont.truetype(FONT_BOLD, 30),      # Cabeçalho Tabela
-            "price": ImageFont.truetype(FONT_BOLD, 36),     # Preço Tabela
-            "item": ImageFont.truetype(FONT_REG, 28),       # Itens Tabela
-            "badge": ImageFont.truetype(FONT_BOLD, 26)      # Badges (200, 10d)
-        }
+        # Troque pelos nomes reais se você tiver arquivos de fonte
+        f_regular = ImageFont.truetype("regular.ttf", 32)
+        f_bold    = ImageFont.truetype("bold.ttf", 34)
+        f_italic  = ImageFont.truetype("italic.ttf", 34)
+        f_small   = ImageFont.truetype("regular.ttf", 24)
+        return f_regular, f_bold, f_italic, f_small
     except:
         d = ImageFont.load_default()
-        return {"val": d, "val_sm": d, "head": d, "price": d, "item": d, "badge": d}
+        return d, d, d, d
 
-def fit_text(draw, x, y, text, font_obj, max_w, fill):
-    """Escreve texto reduzindo a fonte se ultrapassar a largura máxima"""
-    current_size = getattr(font_obj, "size", 30)
-    font = font_obj
-    
-    # Reduz até caber ou chegar a 18px
-    while draw.textbbox((0,0), text, font=font)[2] > max_w and current_size > 18:
-        current_size -= 2
+F_REG, F_BOLD, F_ITAL, F_SMALL = load_fonts()
+
+# =========================
+# CORES
+# =========================
+AZUL = (22, 42, 63, 255)
+LARANJA = (243, 112, 33, 255)
+PRETO = (25, 25, 25, 255)
+BRANCO = (255, 255, 255, 255)
+CINZA_TXT = (90, 90, 90, 255)
+
+# =========================
+# HELPERS DE TEXTO
+# =========================
+def fit_text(draw, text, max_width, font_path=None, start_size=36, min_size=18, bold=False):
+    # Ajusta tamanho até caber
+    size = start_size
+    while size >= min_size:
         try:
-            # Tenta manter o estilo (Bold ou Regular)
-            font_file = FONT_BOLD if "bold" in str(font_obj).lower() else FONT_REG
-            font = ImageFont.truetype(font_file, current_size)
+            font = ImageFont.truetype("bold.ttf" if bold else "regular.ttf", size)
         except:
-            break
-            
-    # Anchor 'lm' = Left Middle (Alinhado à esquerda, centralizado verticalmente na linha)
-    draw.text((x, y), text, font=font, fill=fill, anchor="lm")
+            font = ImageFont.load_default()
+        w = draw.textlength(text, font=font)
+        if w <= max_width:
+            return font
+        size -= 1
+    return font
 
-def draw_custom_check(draw, cx, cy, status):
-    """Desenha ícones vetoriais manuais (Check ou X) sem usar emojis"""
-    r = 16 # Raio do círculo
-    
-    if status == "✔":
-        color = (36, 168, 90, 255) # Verde Legacy
-        draw.ellipse([cx-r, cy-r, cx+r, cy+r], fill=color)
-        # Check branco
-        points = [(cx-6, cy+1), (cx-1, cy+6), (cx+8, cy-5)]
-        draw.line(points[0:2], fill="white", width=3)
-        draw.line(points[1:3], fill="white", width=3)
-        
-    elif status == "✖":
-        color = (220, 70, 70, 255) # Vermelho
-        draw.ellipse([cx-r, cy-r, cx+r, cy+r], fill=color)
-        # X branco
-        d = 5
-        draw.line([(cx-d, cy-d), (cx+d, cy+d)], fill="white", width=3)
-        draw.line([(cx+d, cy-d), (cx-d, cy+d)], fill="white", width=3)
-
-def draw_badge(draw, cx, cy, text, font):
-    """Desenha pílula cinza para valores numéricos da tabela"""
-    w = draw.textbbox((0,0), text, font=font)[2]
-    pad_x, pad_y = 16, 6
-    x0, y0 = cx - w/2 - pad_x, cy - 14
-    x1, y1 = cx + w/2 + pad_x, cy + 14
-    
-    draw.rounded_rectangle([x0,y0,x1,y1], radius=14, fill=(240,240,240,255), outline=(200,200,200,255), width=1)
-    draw.text((cx, cy), text, font=font, fill=(50,50,50,255), anchor="mm")
+def brl(v):
+    # v float -> "1.234,56"
+    s = f"{v:,.2f}"
+    return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 # =========================
-# 4. LÓGICA DE NEGÓCIO
+# ÍCONES BONITOS (DESENHADOS)
 # =========================
-BENEFICIOS = [
-    ("Rastreamento", ["✔","✔","✔","✔"]),
-    ("Reboque",      ["200","400","1mil","1mil"]),
-    ("Roubo/Furto",  ["✖","✔","✔","✔"]),
-    ("Colisão/PT",   ["✖","✖","✔","✔"]),
-    ("Terceiros",    ["✖","✖","✔","✔"]),
-    ("Vidros",       ["✖","✖","✔","✔"]),
-    ("Carro Res.",   ["✖","✖","10d","30d"]),
-    ("Gás (GNV)",    ["✖","✖","✖","✔"]),
-]
+def draw_check(draw, cx, cy, r=16):
+    # círculo verde + check branco
+    green = (33, 163, 102, 255)
+    draw.ellipse((cx-r, cy-r, cx+r, cy+r), fill=green)
+    # check
+    x1, y1 = cx - r*0.35, cy + r*0.05
+    x2, y2 = cx - r*0.10, cy + r*0.30
+    x3, y3 = cx + r*0.40, cy - r*0.25
+    draw.line((x1,y1,x2,y2), fill=BRANCO, width=4)
+    draw.line((x2,y2,x3,y3), fill=BRANCO, width=4)
 
-def calcular_tabela(fipe, regiao):
-    # Tabela simplificada para o exemplo
-    # [Econ, Basico, Plus, Premium]
-    precos_base = {
-        10000:  [75.00,  86.60, 110.40, 151.50],
-        30000:  [75.00, 126.80, 172.69, 202.50],
-        50000:  [75.00, 180.69, 243.60, 277.60],
-        70000:  [75.00, 248.79, 322.79, 370.50],
-        100000: [75.00, 370.59, 487.59, 535.69],
-    }
-    
-    # Lógica simples de teto para exemplo
-    valores = [75.00, 370.59, 487.59, 535.69] # Default (alto)
-    for teto, lista in precos_base.items():
-        if fipe <= teto:
-            valores = lista
-            break
-            
-    # Ajuste regional (Exemplo: Serrana +5%)
-    if regiao == "Serrana":
-        valores = [v * 1.05 for v in valores]
-        
-    return [f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") for v in valores]
+def draw_x(draw, cx, cy, r=16):
+    # círculo vermelho + X branco
+    red = (214, 68, 68, 255)
+    draw.ellipse((cx-r, cy-r, cx+r, cy+r), fill=red)
+    d = r*0.35
+    draw.line((cx-d, cy-d, cx+d, cy+d), fill=BRANCO, width=4)
+    draw.line((cx-d, cy+d, cx+d, cy-d), fill=BRANCO, width=4)
 
-def gerar_cotacao(dados):
-    # 1. Carregar BG
-    try:
-        bg = Image.open(BG_PATH).convert("RGBA")
-        bg = bg.resize((W, H), Image.LANCZOS)
-    except:
-        return None # Erro tratado no UI
+def draw_pill(draw, x, y, w, h, text, font):
+    # pílula cinza clara com texto
+    fill = (245, 245, 245, 235)
+    outline = (215, 215, 215, 255)
+    r = h // 2
+    draw.rounded_rectangle((x, y, x+w, y+h), radius=r, fill=fill, outline=outline, width=2)
+    tw = draw.textlength(text, font=font)
+    draw.text((x + w/2 - tw/2, y + (h - font.size)/2 - 2), text, font=font, fill=PRETO)
 
-    # 2. Camada de Desenho
-    overlay = Image.new("RGBA", (W, H), (0,0,0,0))
-    draw = ImageDraw.Draw(overlay)
-    fonts = load_fonts()
-    
-    # Cores
-    TEXT_COLOR = (255, 255, 255, 255) # Texto sobre o BG escuro/azul
-    TABLE_TEXT = (20, 20, 20, 255)    # Texto dentro da tabela clara
+# =========================
+# TABELA (AREA-ALVO)
+# =========================
+def draw_table_on_box(img, precos, itens, box, debug=False):
+    x1, y1, x2, y2 = box
+    draw = ImageDraw.Draw(img, "RGBA")
 
-    # ---------------------------------------------------------
-    # PARTE 1: PREENCHIMENTO DE FORMULÁRIO (Respeitando o BG)
-    # ---------------------------------------------------------
-    p = POS
-    # Cliente
-    fit_text(draw, p["proposta"]["x"], p["proposta"]["y"], dados["cliente"], fonts["val"], p["proposta"]["max_w"], TEXT_COLOR)
-    # Data
-    fit_text(draw, p["data"]["x"], p["data"]["y"], dados["data"], fonts["val_sm"], p["data"]["max_w"], TEXT_COLOR)
-    # Adesão (Apenas número)
-    fit_text(draw, p["adesao"]["x"], p["adesao"]["y"], dados["adesao"], fonts["val"], p["adesao"]["max_w"], TEXT_COLOR)
-    # Consultor
-    fit_text(draw, p["consultor"]["x"], p["consultor"]["y"], dados["consultor"], fonts["val_sm"], p["consultor"]["max_w"], TEXT_COLOR)
-    # Veículo
-    fit_text(draw, p["placa"]["x"], p["placa"]["y"], dados["placa"], fonts["val"], p["placa"]["max_w"], TEXT_COLOR)
-    fit_text(draw, p["modelo_ano"]["x"], p["modelo_ano"]["y"], dados["modelo_ano"], fonts["val"], p["modelo_ano"]["max_w"], TEXT_COLOR)
+    # Painel glass/esquelomorfo
+    panel_fill = (255, 255, 255, 210)
+    panel_outline = (210, 210, 210, 255)
+    shadow = (0, 0, 0, 35)
 
-    # ---------------------------------------------------------
-    # PARTE 2: TABELA DINÂMICA (Glassmorphism)
-    # ---------------------------------------------------------
-    tx0, ty0, tx1, ty1 = TABLE_RECT
-    
-    # Sombra
-    draw.rounded_rectangle([tx0+6, ty0+8, tx1+6, ty1+8], radius=25, fill=(0,0,0,60))
-    # Vidro (Fundo Branco Translúcido)
-    draw.rounded_rectangle([tx0, ty0, tx1, ty1], radius=25, fill=(255,255,255,235), outline=(200,200,200,100), width=1)
-    
-    # Grid interno
-    pad = 20
-    ix0, iy0 = tx0 + pad, ty0 + pad
-    ix1, iy1 = tx1 - pad, ty1 - pad
-    
-    cols = ["Econ.", "Básico", "Plus", "Prem."]
-    # Largura: Coluna nomes (menor) + 4 colunas iguais
-    total_w = ix1 - ix0
-    name_col_w = total_w * 0.22 
-    data_col_w = (total_w - name_col_w) / 4
-    
-    # Cabeçalho Laranja
-    head_h = 50
-    draw.rounded_rectangle([ix0, iy0, ix1, iy0+head_h], radius=12, fill=(243,112,33,255))
-    
-    # Textos Cabeçalho
-    for i, col in enumerate(cols):
-        cx = ix0 + name_col_w + (i * data_col_w) + (data_col_w/2)
-        draw.text((cx, iy0 + head_h/2), col, font=fonts["head"], fill="white", anchor="mm")
-        
-    # Preços
-    price_y = iy0 + head_h + 10
-    price_h = 80
-    
-    for i, val in enumerate(dados["precos"]):
-        cx = ix0 + name_col_w + (i * data_col_w) + (data_col_w/2)
-        draw.text((cx, price_y + 25), "R$", font=fonts["val_sm"], fill=TABLE_TEXT, anchor="mm")
-        draw.text((cx, price_y + 55), val, font=fonts["price"], fill=TABLE_TEXT, anchor="mm")
-        
-    # Linha divisória
-    line_y = price_y + price_h + 5
-    draw.line([(ix0, line_y), (ix1, line_y)], fill=(200,200,200,255), width=2)
-    
-    # Itens (Loop)
-    curr_y = line_y + 25
-    row_h = 52 # Altura da linha
-    
-    for nome, status_list in BENEFICIOS:
+    # sombra leve
+    draw.rounded_rectangle((x1+8, y1+10, x2+8, y2+10), radius=28, fill=shadow)
+    draw.rounded_rectangle((x1, y1, x2, y2), radius=28, fill=panel_fill, outline=panel_outline, width=2)
+
+    if debug:
+        # borda de debug em vermelho
+        draw.rectangle((x1, y1, x2, y2), outline=(255, 0, 0, 255), width=2)
+
+    # Métricas internas
+    pad = 26
+    inner_x1, inner_y1 = x1 + pad, y1 + pad
+    inner_x2, inner_y2 = x2 - pad, y2 - pad
+    inner_w = inner_x2 - inner_x1
+
+    # Colunas
+    col_names = ["Econ.", "Básico", "Plus", "Prem."]
+    label_col_w = int(inner_w * 0.34)     # coluna de benefícios
+    plans_w = inner_w - label_col_w
+    col_w = plans_w / 4
+
+    # Cabeçalho laranja
+    header_h = 64
+    header_y1 = inner_y1
+    header_y2 = header_y1 + header_h
+    draw.rounded_rectangle((inner_x1, header_y1, inner_x2, header_y2), radius=18, fill=LARANJA)
+
+    # Títulos das colunas (itálico)
+    # Centraliza nas 4 colunas de planos
+    for i, name in enumerate(col_names):
+        cx = inner_x1 + label_col_w + (i + 0.5) * col_w
+        tw = draw.textlength(name, font=F_ITAL)
+        draw.text((cx - tw/2, header_y1 + 14), name, font=F_ITAL, fill=BRANCO)
+
+    # Linha separadora pós-header
+    y = header_y2 + 14
+    draw.line((inner_x1, y, inner_x2, y), fill=(190, 190, 190, 255), width=2)
+    y += 10
+
+    # Linha de preços (1 linha dedicada)
+    prices_block_h = 96
+    prices_y1 = y
+    prices_y2 = prices_y1 + prices_block_h
+
+    # "R$" pequeno acima + valor grande
+    for i, p in enumerate(precos):
+        cx = inner_x1 + label_col_w + (i + 0.5) * col_w
+        draw.text((cx - 10, prices_y1 + 4), "R$", font=F_SMALL, fill=PRETO)
+        # valor
+        font_val = fit_text(draw, p.replace("R$ ", ""), max_width=col_w-10, start_size=44, min_size=28, bold=True)
+        tw = draw.textlength(p.replace("R$ ", ""), font=font_val)
+        draw.text((cx - tw/2, prices_y1 + 30), p.replace("R$ ", ""), font=font_val, fill=PRETO)
+
+    y = prices_y2 + 12
+    draw.line((inner_x1, y, inner_x2, y), fill=(190, 190, 190, 255), width=2)
+    y += 12
+
+    # Agora vem o grid de benefícios, auto-ajustado no que sobrou
+    available_h = inner_y2 - y
+    n = len(itens)
+    row_h = available_h / n
+
+    # Proteção: se ficar muito apertado, reduz fonte do rótulo
+    label_font = F_ITAL
+    if row_h < 48:
+        label_font = ImageFont.truetype("italic.ttf", 28) if hasattr(F_ITAL, "size") else F_ITAL
+    if row_h < 40:
+        label_font = ImageFont.truetype("italic.ttf", 24) if hasattr(F_ITAL, "size") else F_ITAL
+
+    # Render das linhas
+    for r, (nome, status_lista) in enumerate(itens):
+        ry = y + r * row_h
+        cy = ry + row_h / 2
+
         # Nome do benefício
-        draw.text((ix0 + 10, curr_y), nome, font=fonts["item"], fill=(80,80,80,255), anchor="lm")
-        
-        # Ícones
-        for i, status in enumerate(status_list):
-            cx = ix0 + name_col_w + (i * data_col_w) + (data_col_w/2)
-            if status in ["✔", "✖"]:
-                draw_custom_check(draw, cx, curr_y, status)
+        # Ajusta para não estourar a coluna
+        max_label_w = label_col_w - 10
+        f_label = fit_text(draw, nome, max_label_w, start_size=30, min_size=20, bold=False)
+        draw.text((inner_x1, cy - f_label.size/2 - 2), nome, font=f_label, fill=CINZA_TXT)
+
+        # Conteúdo nas colunas
+        for i, status in enumerate(status_lista):
+            cx = inner_x1 + label_col_w + (i + 0.5) * col_w
+
+            if status == "✔":
+                draw_check(draw, cx, cy, r=15)
+            elif status == "✖":
+                draw_x(draw, cx, cy, r=15)
             else:
-                draw_badge(draw, cx, curr_y, status, fonts["badge"])
-        
-        curr_y += row_h
-        # Segurança para não desenhar fora do painel
-        if curr_y > iy1: break
+                # texto em pílula
+                txt = str(status)
+                # dimensiona pill conforme conteúdo
+                pill_h = 34
+                pill_w = max(68, int(draw.textlength(txt, font=F_ITAL) + 28))
+                draw_pill(draw, cx - pill_w/2, cy - pill_h/2, pill_w, pill_h, txt, F_ITAL)
 
-    # Compõe e retorna
-    return Image.alpha_composite(bg, overlay).convert("RGB")
+    return img
 
 # =========================
-# 5. INTERFACE (STREAMLIT)
+# MENSALIDADES (SEU MAPA)
 # =========================
-col_logo, col_title = st.columns([1,4])
-with col_title:
-    st.title("Gerador de Cotação")
-    st.caption("Preenchimento Automático sobre Layout Oficial")
+def calcular_mensalidades(fipe, regiao):
+    tabela = {
+        10000: ([75.00, 86.60, 110.40, 151.50], [75.00, 80.60, 93.00, 140.69]),
+        20000: ([75.00, 110.60, 137.49, 170.49], [75.00, 108.10, 125.00, 167.00]),
+        30000: ([75.00, 126.80, 172.69, 202.50], [75.00, 123.60, 141.00, 202.00]),
+        40000: ([75.00, 148.50, 202.89, 238.50], [75.00, 146.40, 176.00, 232.00]),
+        50000: ([75.00, 180.69, 243.60, 277.60], [75.00, 178.80, 213.00, 273.00]),
+        60000: ([75.00, 220.49, 270.59, 332.49], [75.00, 219.90, 240.00, 301.00]),
+        70000: ([75.00, 248.79, 322.79, 370.50], [75.00, 246.90, 277.00, 337.00]),
+        80000: ([75.00, 290.69, 372.60, 418.60], [75.00, 288.90, 313.00, 373.00]),
+        90000: ([75.00, 330.49, 422.79, 475.70], [75.00, 329.90, 348.00, 410.00]),
+        100000:([75.00, 370.59, 487.59, 535.69], [75.00, 389.60, 465.00, 520.00]),
+    }
+    idx = 0 if regiao == "Capital" else 1
+    for teto, precos in tabela.items():
+        if fipe <= teto:
+            return [f"R$ {brl(v)}" for v in precos[idx]]
+    return None
 
-# Inputs
+# =========================
+# CRIAR IMAGEM (BG FIXO + VALORES + TABELA)
+# =========================
+def criar_cotacao(bg_path, dados, precos, debug=False):
+    bg = Image.open(bg_path).convert("RGBA")
+    bg = bg.resize((W, H), Image.LANCZOS)
+    img = bg.copy()
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # 1) Preencher valores (sem recriar rótulos)
+    # Ajuste automático de fonte por largura de campo (aproximação)
+    # Definimos larguras máximas conservadoras por campo:
+    maxw = {
+        "proposta_para": 360,
+        "data": 260,
+        "adesao": 220,
+        "consultor": 280,
+        "placa": 780,
+        "modelo_ano": 760
+    }
+
+    for k, (x, y) in FIELDS.items():
+        text = dados.get(k, "")
+        if not text:
+            continue
+
+        # estilo do topo: branco
+        # (se você quiser outro, muda aqui)
+        font = fit_text(draw, text, maxw.get(k, 300), start_size=44 if k in ["placa", "modelo_ano"] else 34, min_size=20, bold=False)
+        draw.text((x, y), text, font=font, fill=BRANCO)
+
+    # 2) Itens da tabela (com Incêndio e Clube Certo)
+    itens = [
+        ("Rastreamento", ["✔", "✔", "✔", "✔"]),
+        ("Reboque", ["200", "400", "1mil", "1mil"]),
+        ("Roubo/Furto", ["✖", "✔", "✔", "✔"]),
+        ("Colisão/PT", ["✖", "✖", "✔", "✔"]),
+        ("Incêndio", ["✖", "✖", "✔", "✔"]),       # CONFIRMADO POR VOCÊ
+        ("Terceiros", ["✖", "✖", "✔", "✔"]),
+        ("Vidros", ["✖", "✖", "✔", "✔"]),
+        ("Carro Res.", ["✖", "✖", "10d", "30d"]),
+        ("Gás (GNV)", ["✖", "✖", "✖", "✔"]),
+        ("Clube Certo", ["✖", "✔", "✔", "✔"]),    # BÁSICO AO PREMIUM
+    ]
+
+    # 3) Desenhar tabela na área-alvo
+    img = draw_table_on_box(img, precos, itens, TABLE_BOX, debug=debug)
+
+    return img.convert("RGB")
+
+# =========================
+# UI STREAMLIT
+# =========================
+st.title("📝 Gerador de Cotação Legacy (BG fixo)")
+
+bg_path = "fundo.png"  # mantenha o nome do arquivo do BG no ambiente
+
+with st.expander("⚙️ Opções de ajuste", expanded=False):
+    debug = st.checkbox("DEBUG: mostrar área-alvo da tabela", value=False)
+    regiao = st.selectbox("Região", ["Capital", "Serrana"])
+else:
+    debug = False
+    regiao = "Capital"
+
 c1, c2 = st.columns(2)
-cliente = c1.text_input("Nome do Cliente")
-consultor = c2.text_input("Nome do Consultor")
+proposta_para = c1.text_input("Proposta para (valor)")
+data = c2.text_input("Data (valor)", value=datetime.now().strftime("%d/%m/%Y"))
 
 c3, c4 = st.columns(2)
-whatsapp = c3.text_input("WhatsApp Cliente (com DDD)", placeholder="21999999999")
-placa = c4.text_input("Placa", placeholder="ABC-1234")
+adesao = c3.text_input("Adesão (somente número, ex: 300,00)")
+consultor = c4.text_input("Consultor (valor)")
 
 c5, c6 = st.columns(2)
-modelo = c5.text_input("Modelo Veículo", placeholder="Ex: Honda Civic")
-ano = c6.text_input("Ano", placeholder="2023")
+placa = c5.text_input("Placa (valor)")
+modelo_ano = c6.text_input("Modelo/Ano (valor)", placeholder="Ex: RENEGADE / 2024")
 
-c7, c8 = st.columns(2)
-fipe = c7.number_input("Valor FIPE (R$)", min_value=0.0, step=100.0)
-regiao = c8.selectbox("Região", ["Capital", "Serrana"])
+fipe = st.number_input("Valor FIPE", step=100.0, min_value=0.0)
 
-adesao = st.text_input("Valor Adesão (Sem R$)", value="300,00")
-
-# Botão Gerar
 if st.button("GERAR COTAÇÃO", type="primary"):
-    if not cliente or not consultor or fipe == 0:
-        st.error("Preencha Cliente, Consultor e FIPE.")
+    if fipe <= 0:
+        st.warning("Informe um valor FIPE válido.")
     else:
-        # 1. Calcular
-        precos = calcular_tabela(fipe, regiao)
-        
-        # 2. Preparar Dados
-        dados_img = {
-            "cliente": cliente.upper(),
-            "data": datetime.date.today().strftime("%d/%m/%Y"),
-            "adesao": adesao,
-            "consultor": consultor.upper(),
-            "placa": placa.upper() if placa else "---",
-            "modelo_ano": f"{modelo.upper()} / {ano}",
-            "precos": precos
-        }
-        
-        # 3. Gerar Imagem
-        img = gerar_cotacao(dados_img)
-        
-        if img:
-            # Mostrar Prévia
-            st.image(img, caption="Prévia Final", use_container_width=True)
-            
-            # Preparar Download
+        precos = calcular_mensalidades(fipe, regiao)
+        if not precos:
+            st.error("FIPE acima do limite da tabela.")
+        else:
+            dados = {
+                "proposta_para": proposta_para.strip(),
+                "data": data.strip(),
+                "adesao": adesao.strip(),
+                "consultor": consultor.strip(),
+                "placa": placa.strip(),
+                "modelo_ano": modelo_ano.strip(),
+            }
+
+            img = criar_cotacao(bg_path, dados, precos, debug=debug)
+            st.image(img, caption="Cotação gerada", width=420)
+
             buf = io.BytesIO()
             img.save(buf, format="PNG")
-            img_bytes = buf.getvalue()
-            
-            st.download_button("📥 BAIXAR IMAGEM", img_bytes, file_name=f"Cotacao_{cliente}.png", mime="image/png")
-            
-            # 4. Botão WhatsApp (Fluxo Gratuito)
-            # Cria mensagem de texto + link wa.me
-            msg_texto = f"*Cotação Legacy*\n\nCliente: {cliente}\nVeículo: {modelo} ({ano})\nFIPE: R$ {fipe:,.2f}\n\n*Confira a imagem anexa com os planos detalhados.*"
-            msg_encoded = urllib.parse.quote(msg_texto)
-            
-            link_zap = f"https://wa.me/{whatsapp}?text={msg_encoded}" if whatsapp else f"https://wa.me/?text={msg_encoded}"
-            
-            st.markdown("---")
-            st.success("Imagem gerada! Agora envie para o cliente.")
-            
-            # Botão HTML Verde
-            st.markdown(f"""
-                <a href="{link_zap}" target="_blank">
-                    <button style="background-color:#25D366; color:white; border:none; padding:12px 24px; border-radius:8px; font-weight:bold; cursor:pointer; width:100%;">
-                        📱 ENVIAR NO WHATSAPP
-                    </button>
-                </a>
-                <p style="text-align:center; font-size:12px; color:gray; margin-top:5px;">
-                    Ao abrir o WhatsApp, anexe a imagem que você acabou de baixar.
-                </p>
-            """, unsafe_allow_html=True)
-            
-        else:
-            st.error("Erro: Imagem de fundo não encontrada.")
+            png_bytes = buf.getvalue()
+
+            st.download_button(
+                "📥 BAIXAR IMAGEM",
+                data=png_bytes,
+                file_name=f"Cotacao_{proposta_para or 'cliente'}.png",
+                mime="image/png"
+            )
