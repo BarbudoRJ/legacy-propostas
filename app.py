@@ -1,75 +1,61 @@
 import streamlit as st
+import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
-from datetime import datetime
 import urllib.parse
-import base64
-import requests
+from datetime import date
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Gerador Legacy Premium", page_icon="💎", layout="centered")
+# =========================================================
+# CONFIG GERAL
+# =========================================================
+st.set_page_config(page_title="Cotação Legacy", page_icon="📝", layout="centered")
 
-# --- CSS (Estilos) ---
-st.markdown("""
-<style>
-    .stButton>button { width: 100%; font-weight: bold; }
-    .whatsapp-btn {
-        background-color: #25D366; color: white; padding: 12px 20px;
-        text-align: center; text-decoration: none; display: block;
-        font-size: 16px; border-radius: 8px; border: none; width: 100%;
-        font-weight: bold; cursor: pointer; margin-top: 10px;
-    }
-    .whatsapp-btn:hover { background-color: #128C7E; }
-</style>
-""", unsafe_allow_html=True)
+W, H = 1080, 1350
 
-# ==============================================================================
-# 1. API FIPE (PARALLELUM) - LÓGICA DE BUSCA AUTOMÁTICA
-# ==============================================================================
-BASE_URL = "https://parallelum.com.br/fipe/api/v1"
+# Provedor FIPE gratuito (paralellum)
+BASE_FIPE = "https://parallelum.com.br/fipe/api/v1"
+TYPE_MAP = {"Carro": "carros", "Moto": "motos", "Utilitário": "caminhoes"}  # caminhões/ônibus
 
-@st.cache_data(ttl=3600)
-def get_marcas(tipo="carros"):
-    try:
-        url = f"{BASE_URL}/{tipo}/marcas"
-        return requests.get(url).json()
-    except: return []
+# =========================================================
+# HELPERS: API + CACHE
+# =========================================================
+@st.cache_data(ttl=60 * 60)
+def api_get(url: str):
+    r = requests.get(url, timeout=15)
+    r.raise_for_status()
+    return r.json()
 
-@st.cache_data(ttl=3600)
-def get_modelos(tipo, marca_id):
-    try:
-        url = f"{BASE_URL}/{tipo}/marcas/{marca_id}/modelos"
-        return requests.get(url).json()['modelos']
-    except: return []
+@st.cache_data(ttl=60 * 60)
+def listar_marcas(tipo_api: str):
+    return api_get(f"{BASE_FIPE}/{tipo_api}/marcas")
 
-@st.cache_data(ttl=3600)
-def get_anos(tipo, marca_id, modelo_id):
-    try:
-        url = f"{BASE_URL}/{tipo}/marcas/{marca_id}/modelos/{modelo_id}/anos"
-        return requests.get(url).json()
-    except: return []
+@st.cache_data(ttl=60 * 60)
+def listar_modelos(tipo_api: str, marca_id: int):
+    return api_get(f"{BASE_FIPE}/{tipo_api}/marcas/{marca_id}/modelos")
 
-def get_valor_fipe(tipo, marca_id, modelo_id, ano_codigo):
-    try:
-        url = f"{BASE_URL}/{tipo}/marcas/{marca_id}/modelos/{modelo_id}/anos/{ano_codigo}"
-        resp = requests.get(url).json()
-        # Retorna o valor limpo (float) e a string formatada
-        valor_str = resp['Valor'] # Ex: R$ 85.000,00
-        valor_float = float(valor_str.replace("R$ ", "").replace(".", "").replace(",", "."))
-        return valor_float, valor_str, f"{resp['Marca']} {resp['Modelo']} {resp['AnoModelo']}"
-    except: return 0.0, "R$ 0,00", ""
+@st.cache_data(ttl=60 * 60)
+def listar_anos(tipo_api: str, marca_id: int, modelo_id: int):
+    return api_get(f"{BASE_FIPE}/{tipo_api}/marcas/{marca_id}/modelos/{modelo_id}/anos")
 
-# ==============================================================================
-# 2. FUNÇÕES DO SISTEMA (CÁLCULO E IMAGEM)
-# ==============================================================================
-def formatar_telefone(tel):
-    if not tel: return ""
-    nums = "".join(filter(str.isdigit, tel))
-    if len(nums) == 11: return f"({nums[:2]}) {nums[2:7]}-{nums[7:]}"
-    elif len(nums) == 10: return f"({nums[:2]}) {nums[2:6]}-{nums[6:]}"
-    return tel
+def buscar_fipe(tipo_api: str, marca_id: int, modelo_id: int, ano_codigo: str):
+    return api_get(f"{BASE_FIPE}/{tipo_api}/marcas/{marca_id}/modelos/{modelo_id}/anos/{ano_codigo}")
 
-def calcular_mensalidades(fipe, regiao):
+def brl_to_float(valor_brl: str) -> float:
+    # "R$ 28.000,00" -> 28000.00
+    v = valor_brl.replace("R$", "").strip()
+    v = v.replace(".", "").replace(",", ".")
+    return float(v)
+
+def apenas_ano(ano_nome: str) -> str:
+    # Ex.: "2012 Gasolina" -> "2012"
+    for ch in ano_nome:
+        pass
+    return ano_nome[:4] if len(ano_nome) >= 4 and ano_nome[:4].isdigit() else ano_nome
+
+# =========================================================
+# SUA REGRA DE MENSALIDADES (por faixa) - já existente
+# =========================================================
+def calcular_mensalidades(fipe_float, regiao):
     tabela = {
         10000: ([75.00, 86.60, 110.40, 151.50], [75.00, 80.60, 93.00, 140.69]),
         20000: ([75.00, 110.60, 137.49, 170.49], [75.00, 108.10, 125.00, 167.00]),
@@ -83,277 +69,354 @@ def calcular_mensalidades(fipe, regiao):
         100000:([75.00, 370.59, 487.59, 535.69], [75.00, 389.60, 465.00, 520.00]),
     }
     idx = 0 if regiao == "Capital" else 1
-    # Se estourar 100k, pega o último (ajuste simples)
-    if fipe > 100000: return [f"R$ {v:.2f}".replace('.', ',') for v in tabela[100000][idx]]
-    
     for teto, precos in tabela.items():
-        if fipe <= teto: return [f"R$ {v:.2f}".replace('.', ',') for v in precos[idx]]
+        if fipe_float <= teto:
+            return [f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") for v in precos[idx]]
     return None
 
-def criar_proposta(dados):
-    W, H = 1080, 1350
-    try:
-        bg = Image.open("fundo.png").convert("RGBA")
-        bg = bg.resize((W, H), Image.LANCZOS)
-        img = bg.copy()
-    except: img = Image.new("RGBA", (W, H), (255, 255, 255, 255))
-    
-    base_draw = ImageDraw.Draw(img)
-    # CORES
-    LARANJA, AZUL_LEGACY = (243, 112, 33, 255), (0, 35, 95, 255)
-    PRETO, CINZA_TEXTO, BRANCO = (15, 15, 15, 255), (90, 90, 90, 255), (255, 255, 255, 255)
-    PAINEL_FILL, PAINEL_BORDA, PAINEL_BRILHO = (255, 255, 255, 215), (220, 220, 220, 255), (255, 255, 255, 120)
-    VERDE_BADGE, VERM_BADGE = (40, 170, 90, 255), (220, 60, 60, 255)
+# =========================================================
+# DESENHO: ÍCONES BONITINHOS (círculo + check/x)
+# =========================================================
+def draw_check_icon(draw, cx, cy, ok=True):
+    # estilo simples e limpo: círculo + símbolo branco
+    r = 17
+    if ok:
+        fill = (30, 160, 90, 255)   # verde
+        symbol = "✓"
+    else:
+        fill = (210, 60, 60, 255)   # vermelho
+        symbol = "✕"
+    draw.ellipse([cx-r, cy-r, cx+r, cy+r], fill=fill)
+    # símbolo central
+    draw.text((cx, cy+1), symbol, fill=(255,255,255,255), anchor="mm", font=F_ICON)
 
+def draw_pill(draw, x, y, text, font, padding_x=20, padding_y=8,
+              fill=(255,255,255,210), outline=(200,200,200,255), text_fill=(15,15,15,255)):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    w = tw + padding_x*2
+    h = th + padding_y*2
+    r = int(h/2)
+    draw.rounded_rectangle([x, y, x+w, y+h], radius=r, fill=fill, outline=outline, width=2)
+    draw.text((x + w/2, y + h/2), text, font=font, fill=text_fill, anchor="mm")
+    return (x, y, x+w, y+h)
+
+# =========================================================
+# FONTES (tenta carregar; se falhar, usa default)
+# =========================================================
+def load_fonts():
     try:
-        f_titulo = ImageFont.truetype("bold.ttf", 46)
-        f_subtitulo = ImageFont.truetype("bold.ttf", 34)
-        f_texto = ImageFont.truetype("regular.ttf", 28)
-        f_negrito = ImageFont.truetype("bold.ttf", 28)
-        f_head_planos = ImageFont.truetype("bold.ttf", 26)
-        f_preco_num = ImageFont.truetype("bold.ttf", 34)
-        f_preco_rs = ImageFont.truetype("regular.ttf", 22)
-        f_footer = ImageFont.truetype("bold.ttf", 22)
-        f_small = ImageFont.truetype("regular.ttf", 20)
-        f_moto = ImageFont.truetype("bold.ttf", 24)
+        f_bold = ImageFont.truetype("bold.ttf", 34)
+        f_reg  = ImageFont.truetype("regular.ttf", 30)
+        f_small= ImageFont.truetype("regular.ttf", 24)
+        f_tbl_h= ImageFont.truetype("bold.ttf", 30)
+        f_tbl_v= ImageFont.truetype("bold.ttf", 34)
+        f_icon = ImageFont.truetype("bold.ttf", 22)
     except:
-        f_titulo = f_subtitulo = f_texto = f_negrito = f_head_planos = f_preco_num = f_preco_rs = f_footer = f_small = f_moto = ImageFont.load_default()
+        f_bold = f_reg = f_small = f_tbl_h = f_tbl_v = f_icon = ImageFont.load_default()
+    return f_bold, f_reg, f_small, f_tbl_h, f_tbl_v, f_icon
 
-    MARGEM_X, CENTRO_X = 70, W // 2
+F_BOLD, F_REG, F_SMALL, F_TBL_H, F_TBL_V, F_ICON = load_fonts()
 
-    # 1) TOPO
-    y = 175
-    base_draw.text((MARGEM_X, y), "Proposta para:", font=f_texto, fill=CINZA_TEXTO)
-    data_hoje = datetime.now().strftime("%d/%m/%Y")
-    base_draw.text((W - MARGEM_X, y), f"Data: {data_hoje}", font=f_texto, fill=CINZA_TEXTO, anchor="ra")
-    base_draw.text((MARGEM_X + 215, y), dados["cliente"], font=f_negrito, fill=AZUL_LEGACY)
-    y += 42
-    texto_consultor = f"Consultor(a): {dados['consultor']}"
-    if dados['telefone']: texto_consultor += f"   •   {dados['telefone']}"
-    base_draw.text((MARGEM_X, y), texto_consultor, font=f_negrito, fill=LARANJA)
-    y += 55
-    base_draw.line([(MARGEM_X, y), (W - MARGEM_X, y)], fill=(210, 210, 210, 255), width=2)
-    y += 35
-    base_draw.text((CENTRO_X, y), dados["modelo"], font=f_subtitulo, fill=PRETO, anchor="ma")
-    y += 46
-    base_draw.text((CENTRO_X, y), f"Ano: {dados['ano']}  |  FIPE: {dados['fipe']}", font=f_titulo, fill=AZUL_LEGACY, anchor="ma")
-    y += 70
-    badge_w, badge_h = 520, 64
-    bx0, by0 = CENTRO_X - badge_w // 2, y
-    base_draw.rounded_rectangle([bx0, by0, bx0 + badge_w, by0 + badge_h], radius=16, fill=(245, 245, 245, 235))
-    base_draw.text((CENTRO_X, by0 + 20), f"Adesão: R$ {dados['adesao']}", font=f_subtitulo, fill=PRETO, anchor="ma")
+# =========================================================
+# GERADOR DE IMAGEM (RESPEITA FUNDO - SÓ VALORES + TABELA)
+# =========================================================
+def criar_imagem(dados):
+    # 1) carregar fundo SEM CROP
+    bg = Image.open("fundo.png").convert("RGBA")
+    bg = bg.resize((W, H), Image.LANCZOS)
+    img = bg.copy()
 
-    # 2) PAINEL
-    painel_x0, painel_x1 = 55, W - 55
-    painel_y0, painel_y1 = 650, H - 40 
-    painel_h = painel_y1 - painel_y0
-    
-    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow)
-    sd.rounded_rectangle([painel_x0+6, painel_y0+10, painel_x1+6, painel_y1+10], radius=28, fill=(0, 0, 0, 70))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(10))
-    img = Image.alpha_composite(img, shadow)
+    # cores
+    AZUL = (0, 35, 95, 255)
+    PRETO = (15, 15, 15, 255)
+    LARANJA = (230, 120, 20, 255)
+    CINZA_L = (245, 245, 245, 230)
+    OUTLINE = (205, 205, 205, 255)
 
-    panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    pd = ImageDraw.Draw(panel)
-    pd.rounded_rectangle([painel_x0, painel_y0, painel_x1, painel_y1], radius=28, fill=PAINEL_FILL, outline=PAINEL_BORDA, width=2)
-    pd.rounded_rectangle([painel_x0+2, painel_y0+2, painel_x1-2, painel_y0 + int(painel_h*0.22)], radius=26, fill=PAINEL_BRILHO)
-    img = Image.alpha_composite(img, panel)
     draw = ImageDraw.Draw(img)
 
-    # 3) GRID
-    itens = [
-        ("Rastreamento", ["✔", "✔", "✔", "✔"]), ("Reboque", ["200", "400", "1mil", "1mil"]),
-        ("Roubo/Furto", ["✖", "✔", "✔", "✔"]), ("Colisão/PT", ["✖", "✖", "✔", "✔"]),
-        ("Terceiros", ["✖", "✖", "✔", "✔"]), ("Vidros", ["✖", "✖", "✔", "✔"]),
-        ("Carro Res.", ["✖", "✖", "10d", "30d"]), ("Gás (GNV)", ["✖", "✖", "✖", "✔"]),
-    ]
-    pad = 28
-    inner_x0, inner_x1 = painel_x0 + pad, painel_x1 - pad
-    inner_y0, inner_y1 = painel_y0 + 20, painel_y1 - 18
-    inner_w, inner_h = inner_x1 - inner_x0, inner_y1 - inner_y0
-    head_h, line_h, preco_h, footer_h = 40, 18, 78, 110
-    lista_h = inner_h - (head_h + line_h + preco_h + footer_h + 30)
-    row_h = max(42, int(lista_h / len(itens)))
-    label_w = 310
-    col_w = (inner_w - label_w) / 4
-    x_label = inner_x0 + 8
-    x_cols = [inner_x0 + label_w + (i * col_w) + (col_w / 2) for i in range(4)]
-    y0 = inner_y0
+    # -----------------------------
+    # (A) PREENCHER CAMPOS DO LAYOUT (SÓ VALORES)
+    # -----------------------------
+    # Coordenadas alinhadas ao layout enviado (1080x1350)
+    x_val_top = 300
+    y_proposta = 125
+    y_consultor = 155
+    y_contato  = 185
+    y_data     = 215
 
-    draw.rounded_rectangle([inner_x0, y0, inner_x1, y0 + head_h + 5], radius=8, fill=LARANJA)
-    for i, col in enumerate(["Econ.", "Básico", "Plus", "Prem."]):
-        draw.text((x_cols[i], y0 + 12), col, font=f_head_planos, fill=BRANCO, anchor="mm")
-    y_line = y0 + head_h + 5
-    draw.line([(inner_x0, y_line), (inner_x1, y_line)], fill=PRETO, width=3)
-    
-    y_preco = y_line + 18
-    for i, p in enumerate(dados["precos"]):
+    draw.text((x_val_top, y_proposta), dados.get("cliente",""), font=F_BOLD, fill=AZUL, anchor="lm")
+    draw.text((x_val_top, y_consultor), dados.get("consultor",""), font=F_BOLD, fill=AZUL, anchor="lm")
+    draw.text((x_val_top, y_contato), dados.get("contato",""), font=F_BOLD, fill=AZUL, anchor="lm")
+    draw.text((x_val_top, y_data), dados.get("data",""), font=F_BOLD, fill=AZUL, anchor="lm")
+
+    x_val_box = 295
+    y_placa   = 310
+    y_modelo  = 360
+    y_adesao  = 410
+
+    draw.text((x_val_box, y_placa),  dados.get("placa",""), font=F_BOLD, fill=PRETO, anchor="lm")
+
+    modelo_ano = f"{dados.get('modelo','')} | {dados.get('ano','')}"
+    draw.text((x_val_box, y_modelo), modelo_ano, font=F_BOLD, fill=PRETO, anchor="lm")
+
+    draw.text((x_val_box, y_adesao), dados.get("adesao",""), font=F_BOLD, fill=PRETO, anchor="lm")
+
+    # -----------------------------
+    # (B) PAINEL DA TABELA (não mexe no rodapé fixo do fundo)
+    # -----------------------------
+    panel_x0, panel_y0, panel_x1, panel_y1 = 70, 520, 1010, 1085
+
+    # efeito "esquelmorfo" simples: blur do recorte + overlay claro
+    # (sem precisar de nada avançado)
+    panel_crop = img.crop((panel_x0, panel_y0, panel_x1, panel_y1)).filter(ImageFilter.GaussianBlur(6))
+    overlay = Image.new("RGBA", (panel_x1-panel_x0, panel_y1-panel_y0), CINZA_L)
+    panel = Image.alpha_composite(panel_crop, overlay)
+
+    # borda e sombra leve (fake)
+    panel_draw = ImageDraw.Draw(panel)
+    panel_draw.rounded_rectangle([8, 8, (panel_x1-panel_x0)-8, (panel_y1-panel_y0)-8],
+                                 radius=28, outline=OUTLINE, width=3)
+
+    # cola o painel pronto
+    img.paste(panel, (panel_x0, panel_y0), panel)
+
+    # agora desenhar a tabela EM CIMA do painel
+    draw = ImageDraw.Draw(img)
+
+    # grid base
+    inner_x0 = panel_x0 + 35
+    inner_x1 = panel_x1 - 35
+    inner_y0 = panel_y0 + 35
+    inner_y1 = panel_y1 - 35
+
+    cols = ["Econ.", "Básico", "Plus", "Prem."]
+    col_w = int((inner_x1 - inner_x0) / 4)
+
+    # Header laranja
+    header_h = 56
+    draw.rounded_rectangle([inner_x0, inner_y0, inner_x1, inner_y0 + header_h],
+                           radius=18, fill=LARANJA)
+    for i, c in enumerate(cols):
+        cx = inner_x0 + i*col_w + col_w//2
+        draw.text((cx, inner_y0 + header_h/2), c, font=F_TBL_H, fill=(255,255,255,255), anchor="mm")
+
+    y = inner_y0 + header_h + 20
+
+    # valores (mensalidades)
+    precos = dados["precos"]  # lista 4 itens já formatados em BRL
+    for i, p in enumerate(precos):
+        cx = inner_x0 + i*col_w + col_w//2
+        # quebra "R$ 75,00" em duas linhas: R$ e valor
         valor = p.replace("R$ ", "")
-        draw.text((x_cols[i], y_preco + 10), "R$", font=f_preco_rs, fill=PRETO, anchor="mm")
-        draw.text((x_cols[i], y_preco + 44), valor, font=f_preco_num, fill=PRETO, anchor="mm")
-    y_div = y_preco + preco_h
-    draw.line([(inner_x0, y_div), (inner_x1, y_div)], fill=(210, 210, 210, 255), width=2)
+        draw.text((cx, y), "R$", font=F_SMALL, fill=PRETO, anchor="mm")
+        draw.text((cx, y+34), valor, font=F_TBL_V, fill=PRETO, anchor="mm")
 
-    def draw_badge(x, y, kind):
-        r, fill_c = (14, VERDE_BADGE) if kind == "check" else (14, VERM_BADGE)
-        draw.ellipse([x-r, y-r, x+r, y+r], fill=fill_c)
-        pts = [(x-6, y+1), (x-1, y+6), (x+8, y-5)] if kind == "check" else [(x-6, y-6), (x+6, y+6), (x+6, y-6), (x-6, y+6)]
-        if kind == "check":
-            draw.line(pts[0:2], fill=BRANCO, width=3); draw.line(pts[1:3], fill=BRANCO, width=3)
-        else:
-            draw.line(pts[0:2], fill=BRANCO, width=3); draw.line(pts[2:4], fill=BRANCO, width=3)
-            
-    def draw_pill(x, y, txt):
-        tw, _ = draw.textbbox((0,0), txt, font=f_negrito)[2:]
-        pw = max(54, tw + 26)
-        px0 = x - pw/2
-        draw.rounded_rectangle([px0, y-16, px0+pw, y+16], radius=14, fill=(245,245,245,255), outline=(215,215,215,255), width=2)
-        draw.text((x, y-1), txt, font=f_negrito, fill=PRETO, anchor="mm")
+    # linha
+    y += 85
+    draw.line([(inner_x0, y), (inner_x1, y)], fill=(210,210,210,255), width=2)
+    y += 25
 
-    y_list = y_div + 18
-    for nome, status_lista in itens:
-        y_mid = y_list + (row_h // 2)
-        draw.text((x_label, y_mid), nome, font=f_texto, fill=CINZA_TEXTO, anchor="lm")
-        for i, st in enumerate(status_lista):
-            if st == "✔": draw_badge(x_cols[i], y_mid, "check")
-            elif st == "✖": draw_badge(x_cols[i], y_mid, "x")
-            else: draw_pill(x_cols[i], y_mid, st)
-        y_list += row_h
+    # Benefícios (fixos conforme seu exemplo anterior)
+    # status pode ser: True/False/"200"/"400"/"1mil"/"10d"/"30d"
+    itens = [
+        ("Rastreamento", [True, True, True, True]),
+        ("Reboque",      ["200", "400", "1mil", "1mil"]),
+        ("Roubo/Furto",  [False, True, True, True]),
+        ("Colisão/PT",   [False, False, True, True]),
+        ("Terceiros",    [False, False, True, True]),
+        ("Vidros",       [False, False, True, True]),
+        ("Carro Res.",   [False, False, "10d", "30d"]),
+        ("Gás (GNV)",    [False, False, False, True]),
+    ]
 
-    y_footer_base = inner_y1 - 10
-    draw.text((CENTRO_X, y_footer_base), "A COTAÇÃO PODE SOFRER ALTERAÇÕES BASEADAS NOS VALORES VIGENTES", font=f_small, fill=AZUL_LEGACY, anchor="ms")
-    y_moto = y_footer_base - 35
-    draw.rounded_rectangle([CENTRO_X - 420, y_moto - 32, CENTRO_X + 420, y_moto + 8], radius=10, fill=(240, 240, 250, 255), outline=AZUL_LEGACY, width=1)
-    draw.text((CENTRO_X, y_moto - 12), "⚡ CONHEÇA OS NOSSOS PLANOS PARA PROTEÇÃO DE MOTOS ELÉTRICAS ⚡", font=f_moto, fill=AZUL_LEGACY, anchor="mm")
-    y_promo = y_moto - 50
-    draw.text((CENTRO_X, y_promo), "⚠ PAGAMENTO ANTECIPADO GERA DESCONTO ⚠", font=f_footer, fill=LARANJA, anchor="ms")
+    row_h = 52
+    label_x = inner_x0
+    for nome, status in itens:
+        # nome
+        draw.text((label_x, y + row_h/2), nome, font=F_REG, fill=(90,90,90,255), anchor="lm")
+
+        for i, s in enumerate(status):
+            cx = inner_x0 + i*col_w + col_w//2
+
+            if s is True:
+                draw_check_icon(draw, cx, y + row_h/2, ok=True)
+            elif s is False:
+                draw_check_icon(draw, cx, y + row_h/2, ok=False)
+            else:
+                # texto em "pill"
+                px = cx - 44
+                py = y + row_h/2 - 18
+                draw_pill(draw, px, py, str(s), font=F_REG,
+                          fill=(255,255,255,200), outline=(210,210,210,255), text_fill=PRETO)
+
+        y += row_h
+
     return img.convert("RGB")
 
-# ==============================================================================
-# 3. INTERFACE (O GRANDE MUDANÇA)
-# ==============================================================================
-st.title("🛡️ Gerador Legacy Premium")
+# =========================================================
+# WHATSAPP: mensagem
+# =========================================================
+def montar_mensagem(dados):
+    msg = (
+        f"Olá, {dados.get('cliente','')}! Segue sua cotação LEGACY.\n\n"
+        f"Placa: {dados.get('placa','')}\n"
+        f"Veículo: {dados.get('modelo','')} | Ano: {dados.get('ano','')}\n"
+        f"FIPE: {dados.get('fipe_str','')}\n"
+        f"Adesão: {dados.get('adesao','')}\n\n"
+        f"Mensalidades:\n"
+        f"Econ: {dados['precos'][0]}\n"
+        f"Básico: {dados['precos'][1]}\n"
+        f"Plus: {dados['precos'][2]}\n"
+        f"Premium: {dados['precos'][3]}\n\n"
+        f"Pagamento antecipado gera desconto.\n"
+        f"A cotação pode sofrer alterações baseadas nos valores vigentes."
+    )
+    return msg
 
-# --- ESTADO (SESSION STATE) ---
-if 'fipe_manual' not in st.session_state: st.session_state.fipe_manual = 0.0
-if 'ano_auto' not in st.session_state: st.session_state.ano_auto = ""
-if 'modelo_auto' not in st.session_state: st.session_state.modelo_auto = ""
+# =========================================================
+# UI (APP)
+# =========================================================
+st.title("📝 Cotação LEGACY (layout fixo + tabela automática)")
 
-# --- TABS: Escolha entre Automático ou Manual ---
-tab1, tab2 = st.tabs(["🚗 Busca Automática FIPE", "✍️ Preenchimento Manual"])
+# Estado
+if "fipe_float" not in st.session_state:
+    st.session_state.fipe_float = None
+if "fipe_str" not in st.session_state:
+    st.session_state.fipe_str = None
+if "cotacao_img_bytes" not in st.session_state:
+    st.session_state.cotacao_img_bytes = None
+if "cotacao_dados" not in st.session_state:
+    st.session_state.cotacao_dados = None
+if "wa_link" not in st.session_state:
+    st.session_state.wa_link = None
 
-with tab1:
-    st.caption("Selecione os dados abaixo para preencher o valor automaticamente.")
-    
-    col_tipo, col_marca = st.columns(2)
-    tipo = col_tipo.selectbox("Tipo", ["carros", "motos", "caminhoes"], format_func=lambda x: x.capitalize())
-    
-    # 1. Carrega Marcas
-    marcas_data = get_marcas(tipo)
-    marca_dict = {m['nome']: m['codigo'] for m in marcas_data}
-    marca_sel = col_marca.selectbox("Marca", list(marca_dict.keys()), index=None, placeholder="Selecione...")
-    
-    if marca_sel:
-        # 2. Carrega Modelos
-        marca_id = marca_dict[marca_sel]
-        modelos_data = get_modelos(tipo, marca_id)
-        modelo_dict = {m['nome']: m['codigo'] for m in modelos_data}
-        modelo_sel = st.selectbox("Modelo", list(modelo_dict.keys()), index=None, placeholder="Digite para buscar...")
-        
-        if modelo_sel:
-            # 3. Carrega Anos
-            modelo_id = modelo_dict[modelo_sel]
-            anos_data = get_anos(tipo, marca_id, modelo_id)
-            ano_dict = {a['nome']: a['codigo'] for a in anos_data}
-            ano_sel = st.selectbox("Ano/Combustível", list(ano_dict.keys()), index=None)
-            
-            if ano_sel:
-                # 4. Busca Valor FINAL
-                if st.button("Buscar Valor Tabela", type="secondary"):
-                    with st.spinner("Consultando FIPE..."):
-                        ano_cod = ano_dict[ano_sel]
-                        valor_f, valor_s, desc_full = get_valor_fipe(tipo, marca_id, modelo_id, ano_cod)
-                        
-                        # ATUALIZA O ESTADO PARA PREENCHER O FORMULÁRIO FINAL
-                        st.session_state.fipe_manual = valor_f
-                        st.session_state.modelo_auto = f"{marca_sel} {modelo_sel}"
-                        st.session_state.ano_auto = ano_sel.split(" ")[0] # Pega só o ano "2022"
-                        st.success(f"Valor Encontrado: {valor_s}")
+with st.expander("Identificação", expanded=True):
+    col1, col2 = st.columns(2)
+    cliente = col1.text_input("Proposta para", value="")
+    data_txt = col2.text_input("Data", value=date.today().strftime("%d/%m/%Y"))
 
-with tab2:
-    st.caption("Caso não encontre na busca automática, digite aqui.")
+    col3, col4 = st.columns(2)
+    consultor = col3.text_input("Consultor(a)", value="")
+    contato = col4.text_input("Contato (telefone)", value="")
 
-st.markdown("---")
-st.subheader("📝 Dados da Cotação")
+    placa = st.text_input("Placa (opcional)", value="")
+    adesao = st.text_input("Adesão (texto que vai no layout)", value="R$ 300,00")
 
-# FORMULÁRIO FINAL (Preenchido automaticamente ou manualmente)
-c1, c2 = st.columns(2)
-cliente = c1.text_input("Nome do Cliente")
-# Placa é opcional apenas para registro visual se quiser usar futuramente, mas não busca nada
-placa = c2.text_input("Placa (Opcional - Apenas registro)", placeholder="ABC-1234")
+st.subheader("Dados do veículo (confiável)")
+colA, colB = st.columns(2)
+tipo_label = colA.selectbox("Tipo", ["Carro", "Moto", "Utilitário"])
+regiao = colB.selectbox("Região (para sua tabela interna)", ["Capital", "Serrana"])
 
-c3, c4 = st.columns(2)
-# Usa o valor do session_state se existir
-modelo = c3.text_input("Modelo do Veículo", value=st.session_state.modelo_auto)
-ano = c4.text_input("Ano", value=st.session_state.ano_auto)
+tipo_api = TYPE_MAP[tipo_label]
 
-c5, c6 = st.columns(2)
-consultor = c5.text_input("Nome do Consultor")
-telefone_consultor = c6.text_input("WhatsApp Consultor")
+# Marcas
+marcas = listar_marcas(tipo_api)
+marca_opcoes = {m["nome"]: int(m["codigo"]) for m in marcas}
+marca_nome = st.selectbox("Marca", list(marca_opcoes.keys()))
+marca_id = marca_opcoes[marca_nome]
 
-c7, c8, c9 = st.columns(3)
-# O valor FIPE vem automático aqui
-fipe = c7.number_input("Valor FIPE (R$)", value=st.session_state.fipe_manual, step=100.0, format="%.2f")
-regiao = c8.selectbox("Região", ["Capital", "Serrana"])
-adesao = c9.text_input("Adesão (R$)", value="300,00")
+# Modelos
+dados_modelos = listar_modelos(tipo_api, marca_id)
+modelos = dados_modelos["modelos"]
+modelo_opcoes = {m["nome"]: int(m["codigo"]) for m in modelos}
+modelo_nome = st.selectbox("Modelo", list(modelo_opcoes.keys()))
+modelo_id = modelo_opcoes[modelo_nome]
 
-# --- GERAÇÃO ---
-if st.button("GERAR COTAÇÃO", type="primary"):
-    if fipe > 0 and cliente:
-        with st.spinner("Gerando imagem..."):
-            precos = calcular_mensalidades(fipe, regiao)
-            if precos:
-                dados = {
-                    "cliente": cliente, "consultor": consultor, 
-                    "telefone": formatar_telefone(telefone_consultor),
-                    "modelo": modelo, "ano": ano, 
-                    "fipe": f"R$ {fipe:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), 
-                    "precos": precos, "adesao": adesao
-                }
-                img = criar_proposta(dados)
-                
-                # Base64 para JS
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                img_bytes = buf.getvalue()
-                b64_img = base64.b64encode(img_bytes).decode()
-                
-                st.markdown("---")
-                st.success("✅ Sucesso!")
-                col_img, col_btn = st.columns([1, 1])
-                
-                with col_img:
-                    st.image(img, caption="Prévia", width=350)
-                
-                with col_btn:
-                    share_code = f"""
-                    <script>
-                    async function shareImage() {{
-                        const b64 = "{b64_img}";
-                        const blob = await (await fetch(`data:image/png;base64,${{b64}}`)).blob();
-                        const file = new File([blob], "cotacao_{cliente}.png", {{ type: "image/png" }});
-                        if (navigator.share) {{
-                            try {{ await navigator.share({{ files: [file], title: 'Legacy', text: 'Cotação Legacy' }}); }}
-                            catch (err) {{ console.log('Cancelado'); }}
-                        }} else {{ alert('Use no celular para enviar direto para o WhatsApp.'); }}
-                    }}
-                    </script>
-                    <button onclick="shareImage()" class="share-btn">📱 ENVIAR IMAGEM (WhatsApp)</button>
-                    """
-                    st.components.v1.html(share_code, height=100)
-                    st.download_button("📥 BAIXAR NO PC", img_bytes, f"Cotacao_{cliente}.png", "image/png")
-            else:
-                st.error("Valor FIPE fora da tabela.")
+# Anos
+anos = listar_anos(tipo_api, marca_id, modelo_id)
+ano_opcoes = {a["nome"]: a["codigo"] for a in anos}
+ano_nome = st.selectbox("Ano", list(ano_opcoes.keys()))
+ano_codigo = ano_opcoes[ano_nome]
+
+colC, colD = st.columns(2)
+
+if colC.button("Buscar FIPE", type="primary"):
+    try:
+        info = buscar_fipe(tipo_api, marca_id, modelo_id, ano_codigo)
+        valor_str = info.get("Valor")
+        if not valor_str:
+            st.error("Não consegui obter FIPE (resposta inesperada).")
+        else:
+            st.session_state.fipe_str = valor_str
+            st.session_state.fipe_float = brl_to_float(valor_str)
+            st.success(f"FIPE encontrado: {valor_str}")
+    except Exception as e:
+        st.error(f"Falha ao consultar FIPE: {e}")
+
+if st.session_state.fipe_str:
+    st.info(f"FIPE: {st.session_state.fipe_str}")
+
+# Gerar Cotação
+gerar_ok = st.session_state.fipe_float is not None and cliente.strip() != "" and consultor.strip() != ""
+
+if colD.button("Gerar Cotação", disabled=not gerar_ok):
+    fipe_float = st.session_state.fipe_float
+    precos = calcular_mensalidades(fipe_float, regiao)
+
+    if not precos:
+        st.error("FIPE acima do limite ou fora das faixas configuradas.")
     else:
-        st.warning("Preencha FIPE e Nome do Cliente.")
+        dados = {
+            "cliente": cliente.strip(),
+            "consultor": consultor.strip(),
+            "contato": contato.strip(),
+            "data": data_txt.strip(),
+            "placa": placa.strip(),
+            "modelo": modelo_nome.strip(),
+            "ano": apenas_ano(ano_nome),
+            "adesao": adesao.strip(),
+            "fipe_str": st.session_state.fipe_str,
+            "fipe_float": fipe_float,
+            "precos": precos
+        }
+
+        img = criar_imagem(dados)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        st.session_state.cotacao_img_bytes = buf.getvalue()
+        st.session_state.cotacao_dados = dados
+
+        # WhatsApp link
+        msg = montar_mensagem(dados)
+        msg_enc = urllib.parse.quote(msg)
+        st.session_state.wa_link = f"https://wa.me/?text={msg_enc}"
+
+# Preview + download + enviar whatsapp
+if st.session_state.cotacao_img_bytes:
+    st.image(st.session_state.cotacao_img_bytes, caption="Cotação gerada (respeitando o layout do fundo)", width=420)
+
+    st.download_button(
+        "📥 Baixar imagem",
+        st.session_state.cotacao_img_bytes,
+        file_name=f"Cotacao_{st.session_state.cotacao_dados['cliente']}.png",
+        mime="image/png"
+    )
+
+    # Botão verde para WhatsApp
+    if st.session_state.wa_link:
+        st.markdown(
+            f"""
+            <a href="{st.session_state.wa_link}" target="_blank" style="text-decoration:none;">
+                <button style="
+                    background-color:#16a34a;
+                    color:white;
+                    border:none;
+                    padding:14px 18px;
+                    font-size:16px;
+                    border-radius:12px;
+                    cursor:pointer;
+                    width:100%;
+                    font-weight:700;">
+                    ✅ ENVIAR COTAÇÃO (WhatsApp)
+                </button>
+            </a>
+            """,
+            unsafe_allow_html=True
+        )
+        st.caption("O WhatsApp abre com a mensagem pronta. Anexe a imagem baixada e envie.")
+else:
+    st.caption("Para gerar: preencha Cliente + Consultor, escolha veículo, clique Buscar FIPE e depois Gerar Cotação.")
