@@ -12,11 +12,9 @@ st.set_page_config(page_title="Gerador Cotação Legacy", page_icon="📝", layo
 W, H = 1080, 1350
 
 # Área-alvo da TABELA (onde ela pode existir sem invadir BG/veículos)
-# Ajuste fino aqui se precisar (DEBUG mostra o retângulo)
 TABLE_BOX = (70, 520, 1010, 980)  # (x1, y1, x2, y2)
 
-# Área-alvo dos campos do TOPO (preencher apenas os valores, não os rótulos)
-# Esses pontos assumem que o BG tem rótulos fixos e espaço ao lado/dentro.
+# Coordenadas dos campos do TOPO
 FIELDS = {
     "proposta_para":  (260, 275),  # valor ao lado de "PROPOSTA PARA:"
     "data":           (260, 305),  # valor ao lado de "DATA:"
@@ -27,19 +25,31 @@ FIELDS = {
 }
 
 # =========================
-# FONTES
+# FONTES (COM FALLBACK DE SEGURANÇA)
 # =========================
 def load_fonts():
+    # Tenta carregar as fontes. Se faltar alguma, usa a padrão ou substituta.
     try:
-        # Troque pelos nomes reais se você tiver arquivos de fonte
-        f_regular = ImageFont.truetype("regular.ttf", 32)
-        f_bold    = ImageFont.truetype("bold.ttf", 34)
-        f_italic  = ImageFont.truetype("italic.ttf", 34)
-        f_small   = ImageFont.truetype("regular.ttf", 24)
-        return f_regular, f_bold, f_italic, f_small
+        f_reg = ImageFont.truetype("regular.ttf", 32)
     except:
-        d = ImageFont.load_default()
-        return d, d, d, d
+        f_reg = ImageFont.load_default()
+        
+    try:
+        f_bold = ImageFont.truetype("bold.ttf", 34)
+    except:
+        f_bold = f_reg
+        
+    try:
+        f_ital = ImageFont.truetype("italic.ttf", 34)
+    except:
+        f_ital = f_reg # Usa regular se não tiver itálico
+        
+    try:
+        f_small = ImageFont.truetype("regular.ttf", 24)
+    except:
+        f_small = f_reg
+
+    return f_reg, f_bold, f_ital, f_small
 
 F_REG, F_BOLD, F_ITAL, F_SMALL = load_fonts()
 
@@ -58,11 +68,14 @@ CINZA_TXT = (90, 90, 90, 255)
 def fit_text(draw, text, max_width, font_path=None, start_size=36, min_size=18, bold=False):
     # Ajusta tamanho até caber
     size = start_size
+    font_file = "bold.ttf" if bold else "regular.ttf"
+    
     while size >= min_size:
         try:
-            font = ImageFont.truetype("bold.ttf" if bold else "regular.ttf", size)
+            font = ImageFont.truetype(font_file, size)
         except:
             font = ImageFont.load_default()
+            
         w = draw.textlength(text, font=font)
         if w <= max_width:
             return font
@@ -100,10 +113,11 @@ def draw_pill(draw, x, y, w, h, text, font):
     # pílula cinza clara com texto
     fill = (245, 245, 245, 235)
     outline = (215, 215, 215, 255)
-    r = h // 2
+    r = int(h // 2)
     draw.rounded_rectangle((x, y, x+w, y+h), radius=r, fill=fill, outline=outline, width=2)
     tw = draw.textlength(text, font=font)
-    draw.text((x + w/2 - tw/2, y + (h - font.size)/2 - 2), text, font=font, fill=PRETO)
+    # Centraliza texto na pílula (ajuste fino no eixo Y)
+    draw.text((x + w/2 - tw/2, y + (h - font.size)/2 - 3), text, font=font, fill=PRETO)
 
 # =========================
 # TABELA (AREA-ALVO)
@@ -144,7 +158,6 @@ def draw_table_on_box(img, precos, itens, box, debug=False):
     draw.rounded_rectangle((inner_x1, header_y1, inner_x2, header_y2), radius=18, fill=LARANJA)
 
     # Títulos das colunas (itálico)
-    # Centraliza nas 4 colunas de planos
     for i, name in enumerate(col_names):
         cx = inner_x1 + label_col_w + (i + 0.5) * col_w
         tw = draw.textlength(name, font=F_ITAL)
@@ -155,46 +168,54 @@ def draw_table_on_box(img, precos, itens, box, debug=False):
     draw.line((inner_x1, y, inner_x2, y), fill=(190, 190, 190, 255), width=2)
     y += 10
 
-    # Linha de preços (1 linha dedicada)
+    # Linha de preços
     prices_block_h = 96
     prices_y1 = y
-    prices_y2 = prices_y1 + prices_block_h
-
+    
     # "R$" pequeno acima + valor grande
     for i, p in enumerate(precos):
         cx = inner_x1 + label_col_w + (i + 0.5) * col_w
+        # R$ pequeno
         draw.text((cx - 10, prices_y1 + 4), "R$", font=F_SMALL, fill=PRETO)
-        # valor
-        font_val = fit_text(draw, p.replace("R$ ", ""), max_width=col_w-10, start_size=44, min_size=28, bold=True)
-        tw = draw.textlength(p.replace("R$ ", ""), font=font_val)
-        draw.text((cx - tw/2, prices_y1 + 30), p.replace("R$ ", ""), font=font_val, fill=PRETO)
+        
+        # Valor grande
+        val_txt = p.replace("R$ ", "")
+        font_val = fit_text(draw, val_txt, max_width=col_w-10, start_size=44, min_size=28, bold=True)
+        tw = draw.textlength(val_txt, font=font_val)
+        draw.text((cx - tw/2, prices_y1 + 30), val_txt, font=font_val, fill=PRETO)
 
-    y = prices_y2 + 12
+    y = prices_y1 + prices_block_h + 12
     draw.line((inner_x1, y, inner_x2, y), fill=(190, 190, 190, 255), width=2)
     y += 12
 
-    # Agora vem o grid de benefícios, auto-ajustado no que sobrou
+    # Grid de benefícios
     available_h = inner_y2 - y
     n = len(itens)
     row_h = available_h / n
 
-    # Proteção: se ficar muito apertado, reduz fonte do rótulo
+    # Ajuste de fonte se as linhas ficarem muito apertadas
     label_font = F_ITAL
     if row_h < 48:
-        label_font = ImageFont.truetype("italic.ttf", 28) if hasattr(F_ITAL, "size") else F_ITAL
+        try:
+            label_font = ImageFont.truetype("italic.ttf", 28)
+        except:
+            label_font = F_ITAL
+            
     if row_h < 40:
-        label_font = ImageFont.truetype("italic.ttf", 24) if hasattr(F_ITAL, "size") else F_ITAL
+        try:
+            label_font = ImageFont.truetype("italic.ttf", 24)
+        except:
+            label_font = F_ITAL
 
     # Render das linhas
     for r, (nome, status_lista) in enumerate(itens):
         ry = y + r * row_h
         cy = ry + row_h / 2
 
-        # Nome do benefício
-        # Ajusta para não estourar a coluna
+        # Nome do benefício (ajuste para não estourar)
         max_label_w = label_col_w - 10
         f_label = fit_text(draw, nome, max_label_w, start_size=30, min_size=20, bold=False)
-        draw.text((inner_x1, cy - f_label.size/2 - 2), nome, font=f_label, fill=CINZA_TXT)
+        draw.text((inner_x1, cy - f_label.size/2 - 3), nome, font=f_label, fill=CINZA_TXT)
 
         # Conteúdo nas colunas
         for i, status in enumerate(status_lista):
@@ -205,17 +226,17 @@ def draw_table_on_box(img, precos, itens, box, debug=False):
             elif status == "✖":
                 draw_x(draw, cx, cy, r=15)
             else:
-                # texto em pílula
+                # Pill
                 txt = str(status)
-                # dimensiona pill conforme conteúdo
                 pill_h = 34
-                pill_w = max(68, int(draw.textlength(txt, font=F_ITAL) + 28))
-                draw_pill(draw, cx - pill_w/2, cy - pill_h/2, pill_w, pill_h, txt, F_ITAL)
+                # Calcula largura da pill baseada no texto
+                pill_w = max(68, int(draw.textlength(txt, font=label_font) + 28))
+                draw_pill(draw, cx - pill_w/2, cy - pill_h/2, pill_w, pill_h, txt, label_font)
 
     return img
 
 # =========================
-# MENSALIDADES (SEU MAPA)
+# MENSALIDADES (MAPA)
 # =========================
 def calcular_mensalidades(fipe, regiao):
     tabela = {
@@ -234,54 +255,52 @@ def calcular_mensalidades(fipe, regiao):
     for teto, precos in tabela.items():
         if fipe <= teto:
             return [f"R$ {brl(v)}" for v in precos[idx]]
-    return None
+    # Fallback se for acima de 100k
+    return [f"R$ {brl(v)}" for v in tabela[100000][idx]]
 
 # =========================
-# CRIAR IMAGEM (BG FIXO + VALORES + TABELA)
+# CRIAR IMAGEM
 # =========================
 def criar_cotacao(bg_path, dados, precos, debug=False):
-    bg = Image.open(bg_path).convert("RGBA")
+    try:
+        bg = Image.open(bg_path).convert("RGBA")
+    except:
+        # Cria um fundo cinza se não achar a imagem, pra não dar erro
+        bg = Image.new("RGBA", (W, H), (200, 200, 200, 255))
+        
     bg = bg.resize((W, H), Image.LANCZOS)
     img = bg.copy()
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # 1) Preencher valores (sem recriar rótulos)
-    # Ajuste automático de fonte por largura de campo (aproximação)
-    # Definimos larguras máximas conservadoras por campo:
+    # 1) Preencher valores do topo
     maxw = {
-        "proposta_para": 360,
-        "data": 260,
-        "adesao": 220,
-        "consultor": 280,
-        "placa": 780,
-        "modelo_ano": 760
+        "proposta_para": 360, "data": 260, "adesao": 220,
+        "consultor": 280, "placa": 780, "modelo_ano": 760
     }
 
     for k, (x, y) in FIELDS.items():
         text = dados.get(k, "")
-        if not text:
-            continue
+        if not text: continue
 
-        # estilo do topo: branco
-        # (se você quiser outro, muda aqui)
+        # Texto branco (porque o fundo é escuro nessa área)
         font = fit_text(draw, text, maxw.get(k, 300), start_size=44 if k in ["placa", "modelo_ano"] else 34, min_size=20, bold=False)
         draw.text((x, y), text, font=font, fill=BRANCO)
 
-    # 2) Itens da tabela (com Incêndio e Clube Certo)
+    # 2) Itens da tabela
     itens = [
         ("Rastreamento", ["✔", "✔", "✔", "✔"]),
-        ("Reboque", ["200", "400", "1mil", "1mil"]),
-        ("Roubo/Furto", ["✖", "✔", "✔", "✔"]),
-        ("Colisão/PT", ["✖", "✖", "✔", "✔"]),
-        ("Incêndio", ["✖", "✖", "✔", "✔"]),       # CONFIRMADO POR VOCÊ
-        ("Terceiros", ["✖", "✖", "✔", "✔"]),
-        ("Vidros", ["✖", "✖", "✔", "✔"]),
-        ("Carro Res.", ["✖", "✖", "10d", "30d"]),
-        ("Gás (GNV)", ["✖", "✖", "✖", "✔"]),
-        ("Clube Certo", ["✖", "✔", "✔", "✔"]),    # BÁSICO AO PREMIUM
+        ("Reboque",      ["200", "400", "1mil", "1mil"]),
+        ("Roubo/Furto",  ["✖", "✔", "✔", "✔"]),
+        ("Colisão/PT",   ["✖", "✖", "✔", "✔"]),
+        ("Incêndio",     ["✖", "✖", "✔", "✔"]),
+        ("Terceiros",    ["✖", "✖", "✔", "✔"]),
+        ("Vidros",       ["✖", "✖", "✔", "✔"]),
+        ("Carro Res.",   ["✖", "✖", "10d", "30d"]),
+        ("Gás (GNV)",    ["✖", "✖", "✖", "✔"]),
+        ("Clube Certo",  ["✖", "✔", "✔", "✔"]),
     ]
 
-    # 3) Desenhar tabela na área-alvo
+    # 3) Desenhar tabela
     img = draw_table_on_box(img, precos, itens, TABLE_BOX, debug=debug)
 
     return img.convert("RGB")
@@ -291,14 +310,12 @@ def criar_cotacao(bg_path, dados, precos, debug=False):
 # =========================
 st.title("📝 Gerador de Cotação Legacy (BG fixo)")
 
-bg_path = "fundo.png"  # mantenha o nome do arquivo do BG no ambiente
+bg_path = "fundo.png"
 
+# Opções de ajuste (corrigido erro de sintaxe 'else')
 with st.expander("⚙️ Opções de ajuste", expanded=False):
     debug = st.checkbox("DEBUG: mostrar área-alvo da tabela", value=False)
     regiao = st.selectbox("Região", ["Capital", "Serrana"])
-else:
-    debug = False
-    regiao = "Capital"
 
 c1, c2 = st.columns(2)
 proposta_para = c1.text_input("Proposta para (valor)")
@@ -320,7 +337,7 @@ if st.button("GERAR COTAÇÃO", type="primary"):
     else:
         precos = calcular_mensalidades(fipe, regiao)
         if not precos:
-            st.error("FIPE acima do limite da tabela.")
+            st.error("FIPE fora da tabela.")
         else:
             dados = {
                 "proposta_para": proposta_para.strip(),
