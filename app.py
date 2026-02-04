@@ -1,68 +1,93 @@
-import json
+const legacyConfig = {
+    // ... Seu JSON completo entra aqui
+};
 
-class CotadorApp:
-    def __init__(self, config_json):
-        self.config = config_json
-        self.regras = config_json['regras_gerais']
-        self.matriz = config_json['matriz_precos']
-        self.coberturas_matriz = config_json['matriz_coberturas_por_tipo']
-        self.catalogo = config_json['coberturas_catalogo']
+class MotorCotacaoLegacy {
+    constructor(config) {
+        this.config = config;
+    }
 
-    def calcular_cotacao(self, tipo_veiculo, regiao, valor_fipe):
-        # 1. Validar Limite FIPE
-        limite = self.regras['limite_fipe'].get(tipo_veiculo)
-        if valor_fipe > limite:
-            return {"erro": self.regras['comportamento_acima_do_limite']['mensagem']}
+    // Método principal para gerar a cotação
+    gerar(tipoVeiculo, regiao, valorFipe) {
+        try {
+            // 1. Validação de Limites
+            const limite = this.config.regras_gerais.limite_fipe[tipoVeiculo];
+            if (valorFipe > limite) {
+                return { 
+                    erro: true, 
+                    msg: this.config.regras_gerais.comportamento_acima_do_limite.mensagem 
+                };
+            }
 
-        # 2. Encontrar a Faixa de Preço
-        faixas = self.matriz.get(tipo_veiculo, {}).get(regiao, [])
-        faixa_ativa = None
-        for f in faixas:
-            if f['faixa']['min'] <= valor_fipe <= f['faixa']['max']:
-                faixa_ativa = f
-                break
-        
-        if not faixa_ativa or all(v is None for v in faixa_ativa['planos'].values()):
-            return {"erro": "Preços não configurados para esta faixa/região (Verificar PDF)."}
+            // 2. Busca da Faixa de Preço
+            const faixas = this.config.matriz_precos[tipoVeiculo][regiao];
+            const faixaEncontrada = faixas.find(f => 
+                valorFipe >= f.faixa.min && valorFipe <= f.faixa.max
+            );
 
-        # 3. Construir Resultado por Plano
-        resultado_planos = {}
-        coberturas_por_plano = {}
-        
-        precos_planos = faixa_ativa['planos']
-        
-        for plano, preco in precos_planos.items():
-            if preco is not None:
-                resultado_planos[plano] = preco
-                # Busca coberturas no catálogo filtrando pelo que é 'true' na matriz de coberturas
-                mapa_cob = self.coberturas_matriz[tipo_veiculo][regiao].get(plano, {})
+            if (!faixaEncontrada || this._isFaixaVazia(faixaEncontrada)) {
+                return { 
+                    erro: true, 
+                    msg: "Valores para esta faixa ainda não mapeados no sistema (Aguardando PDF)." 
+                };
+            }
+
+            // 3. Construção do Objeto de Saída (Planos e Coberturas)
+            const planosDisponiveis = {};
+            
+            Object.keys(faixaEncontrada.planos).forEach(planoNome => {
+                const precoBase = faixaEncontrada.planos[planoNome];
                 
-                coberturas_por_plano[plano] = [
-                    self.catalogo[cob_id]['label'] 
-                    for cob_id, ativo in mapa_cob.items() if ativo
-                ]
+                if (precoBase !== null) {
+                    planosDisponiveis[planoNome] = {
+                        valor: precoBase,
+                        coberturas: this._obterCoberturas(tipoVeiculo, regiao, planoNome),
+                        status: this.config.ui.output_style.icon_ok
+                    };
+                }
+            });
 
-        return {
-            "status": "sucesso",
-            "veiculo": tipo_veiculo,
-            "regiao": regiao,
-            "fipe": valor_fipe,
-            "cotacao": resultado_planos,
-            "coberturas": coberturas_por_plano,
-            "icones": self.config['ui']['output_style']
+            return {
+                erro: false,
+                dados: {
+                    veiculo: tipoVeiculo.toUpperCase(),
+                    regiao: regiao.toUpperCase(),
+                    fipe: valorFipe.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+                    planos: planosDisponiveis
+                }
+            };
+
+        } catch (e) {
+            return { erro: true, msg: "Erro interno ao processar cotação. Verifique os domínios." };
         }
+    }
 
-# --- TESTE DO CÓDIGO ---
-# (Assumindo que a variável 'data' contém o seu JSON)
-# data = json.loads(''' seu json aqui ''')
+    // Auxiliar: Filtra as coberturas ativas no catálogo para aquele plano
+    _obterCoberturas(tipo, regiao, plano) {
+        const matriz = this.config.matriz_coberturas_por_tipo[tipo][regiao][plano];
+        const catalogo = this.config.coberturas_catalogo;
 
-app = CotadorApp(data)
-resultado = app.calcular_cotacao("carro", "capital", 25000)
+        return Object.keys(matriz)
+            .filter(key => matriz[key] === true)
+            .map(key => catalogo[key]?.label || key);
+    }
 
-if "erro" in resultado:
-    print(f"❌ Erro: {resultado['erro']}")
-else:
-    print(f"--- COTAÇÃO PARA VEÍCULO DE R$ {resultado['fipe']} ---")
-    for plano, valor in resultado['cotacao'].items():
-        print(f"\nPlano {plano.upper()}: R$ {valor:.2f}")
-        print(f"Coberturas: {', '.join(resultado['coberturas'][plano])}")
+    _isFaixaVazia(faixa) {
+        return Object.values(faixa.planos).every(v => v === null);
+    }
+}
+
+// --- EXEMPLO DE USO ---
+
+const motor = new MotorCotacaoLegacy(legacyConfig);
+
+// Simulação: Carro na Capital com FIPE de 25k
+const resultado = motor.gerar("carro", "capital", 25000);
+
+if (resultado.erro) {
+    console.error(`❌ STATUS: ${resultado.msg}`);
+} else {
+    console.log(`✅ COTAÇÃO GERADA - ${resultado.dados.veiculo}`);
+    console.log(`Valor FIPE: ${resultado.dados.fipe}`);
+    console.table(resultado.dados.planos);
+}
